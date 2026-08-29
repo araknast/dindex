@@ -84,7 +84,7 @@ impl DIndex {
 }
 
 #[cfg(test)]
-mod test_get {
+mod test {
     use crate::dindex::{DIndex, DIndexKey, DIndexRange};
 
     const FILE1: &str = "lines\nof\nthe\nfile\n";
@@ -104,29 +104,7 @@ mod test_get {
             assert!(file == data);
         }
     }
-}
 
-#[cfg(test)]
-mod test_update {
-    use crate::dindex::{DIndex, DIndexKey, DIndexRange};
-
-    const FILE1: &str = "lines\nof\nthe\nfile\n";
-    const FILE2: &str = "the\nfile\n";
-    const FILE3: &str = "the\nfile\nlines\nof";
-    const FILE4: &str = "some\nnew\nlines\nof\nimportance\nfor\nthe\nfile\nhere";
-    const FILE5: &str = "whole\ndifferent\ntext";
-
-    #[test]
-    fn test_get_file() {
-        let mut index = DIndex::new();
-        let files = [FILE1, FILE2, FILE3, FILE4, FILE5];
-        for file in files {
-            let key = index.update(file);
-            let data = index.get(key);
-            println!("{file:?} | {data:?}");
-            assert!(file == data);
-        }
-    }
     #[test]
     fn test_update_new_file() {
         let mut index = DIndex::new();
