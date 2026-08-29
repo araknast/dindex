@@ -12,12 +12,6 @@ impl From<DIndexRange> for Range<usize> {
     }
 }
 
-impl DIndexRange {
-    fn len(&self) -> usize {
-        self.0.1 - self.0.0
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct DIndexKey(Vec<DIndexRange>);
 
@@ -27,9 +21,36 @@ impl DIndexKey {
     }
 }
 
+#[derive(Clone)]
 pub struct DIndex {
     line_map: HashMap<String, usize>,
     lines: Vec<String>,
+}
+
+impl From<Vec<u8>> for DIndex {
+    fn from(byte_array: Vec<u8>) -> DIndex {
+        let mut lines = Vec::new();
+        let mut line_map = HashMap::new();
+        let data = String::from_utf8_lossy_owned(byte_array);
+        for line in data.split_inclusive("\n") {
+            if !line_map.contains_key(line) {
+                line_map.insert(line.to_string(), lines.len());
+                lines.push(line.to_string());
+            }
+        }
+        DIndex { line_map, lines }
+    }
+}
+
+impl From<DIndex> for Vec<u8> {
+    fn from(index: DIndex) -> Vec<u8> {
+        index
+            .lines
+            .into_iter()
+            .map(String::into_bytes)
+            .flatten()
+            .collect()
+    }
 }
 
 impl DIndex {
@@ -47,13 +68,13 @@ impl DIndex {
         let mut range_start = 0;
         let mut range_end = 0;
 
-        for line in file_data.split("\n") {
+        for line in file_data.split_inclusive("\n") {
             if !self.line_map.contains_key(line) {
                 self.line_map.insert(line.to_string(), self.lines.len());
                 self.lines.push(line.to_string());
             }
         }
-        for line in file_data.split("\n") {
+        for line in file_data.split_inclusive("\n") {
             let line_num = *self.line_map.get(line).unwrap();
             if line_num != range_end {
                 ranges.push(DIndexRange((range_start, range_end)));
@@ -73,22 +94,29 @@ impl DIndex {
         while let Some(range) = key.next() {
             data.extend_from_slice(&self.lines[Range::from(range)]);
         }
-        data.join("\n")
+        data.join("")
     }
-    pub fn write_to_disk() {}
-    pub fn read_from_disk() {}
 }
 
 #[cfg(test)]
 mod test {
-    use crate::dindex::DIndex;
+    use crate::manager::dindex::DIndex;
 
     const FILE1: &str = "lines\nof\nthe\nfile\n";
     const FILE2: &str = "the\nfile\n";
-    const FILE3: &str = "the\nfile\nlines\nof";
-    const FILE4: &str = "some\nnew\nlines\nof\nimportance\nfor\nthe\nfile\nhere";
-    const FILE5: &str = "whole\ndifferent\ntext";
+    const FILE3: &str = "the\nfile\nlines\nof\n";
+    const FILE4: &str = "some\nnew\nlines\nof\nimportance\nfor\nthe\nfile\nhere\n";
+    const FILE5: &str = "whole\ndifferent\ntext\n";
 
+    #[test]
+    fn test_serialize_deserialize() {
+        let mut index = DIndex::new();
+        let _ = [FILE1, FILE2, FILE3, FILE4, FILE5].map(|f| index.update(f));
+        let serialized: Vec<u8> = index.clone().into();
+        let deserialized: DIndex = serialized.into();
+        assert!(index.lines == deserialized.lines);
+        assert!(index.line_map.len() == deserialized.line_map.len());
+    }
     #[test]
     fn test_get_file() {
         let mut index = DIndex::new();
