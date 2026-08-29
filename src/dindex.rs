@@ -53,7 +53,7 @@ impl DIndex {
                 self.lines.push(line.to_string());
             }
         }
-        for line in file_data.lines() {
+        for line in file_data.split("\n") {
             let line_num = *self.line_map.get(line).unwrap();
             if line_num != range_end {
                 ranges.push(DIndexRange((range_start, range_end)));
