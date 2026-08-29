@@ -85,7 +85,7 @@ impl DIndex {
 
 #[cfg(test)]
 mod test {
-    use crate::dindex::{DIndex, DIndexKey, DIndexRange};
+    use crate::dindex::DIndex;
 
     const FILE1: &str = "lines\nof\nthe\nfile\n";
     const FILE2: &str = "the\nfile\n";
