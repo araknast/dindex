@@ -67,15 +67,11 @@ impl DIndex {
         DIndexKey(ranges)
     }
 
-    fn read_range(&mut self, range: DIndexRange) -> &[String] {
-        &self.lines[Range::from(range)]
-    }
-
     pub fn get(&mut self, key: DIndexKey) -> String {
         let mut key = key.into_ranges();
         let mut data: Vec<String> = Vec::new();
         while let Some(range) = key.next() {
-            data.extend_from_slice(self.read_range(range));
+            data.extend_from_slice(&self.lines[Range::from(range)]);
         }
         data.join("\n")
     }
@@ -100,8 +96,7 @@ mod test {
         for file in files {
             let key = index.update(file);
             let data = index.get(key);
-            println!("{file:?} | {data:?}");
-            assert!(file == data);
+            assert!(file == data, "{file:?} | {data:?}");
         }
     }
 
