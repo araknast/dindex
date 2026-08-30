@@ -1,7 +1,59 @@
+use sha2::{Digest, Sha256};
 use std::{collections::HashMap, ops::Range};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct DIndexRange((usize, usize));
+
+impl DIndexRange {
+    fn into_bytes(self) -> [u8; 16] {
+        self.into()
+    }
+}
+
+// Turn a DIndexRange into a byte array representing 2 64-bit unsigned integers
+impl From<DIndexRange> for [u8; 16] {
+    fn from(range: DIndexRange) -> [u8; 16] {
+        let mut arr = [0; 16];
+        arr[..8].copy_from_slice(
+            &u64::try_from(range.0.1)
+                .expect("usize > 64 ??")
+                .to_be_bytes(),
+        );
+        arr[8..].copy_from_slice(
+            &u64::try_from(range.0.1)
+                .expect("usize > 64 ??")
+                .to_be_bytes(),
+        );
+
+        arr
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+struct DIndexObjectId([u8; DIndexObjectId::LEN_BYTES]);
+
+impl DIndexObjectId {
+    const LEN_BYTES: usize = 32;
+    fn from_object_data(data: &str) -> DIndexObjectId {
+        DIndexObjectId(Sha256::digest(data).into())
+    }
+
+    fn into_bytes(self) -> [u8; DIndexObjectId::LEN_BYTES] {
+        self.into()
+    }
+}
+
+impl From<DIndexObjectId> for [u8; DIndexObjectId::LEN_BYTES] {
+    fn from(id: DIndexObjectId) -> [u8; DIndexObjectId::LEN_BYTES] {
+        id.0
+    }
+}
+
+#[derive(Clone)]
+struct DIndexObject {
+    parent: DIndexObjectId,
+    data_key: DIndexKey,
+}
 
 impl From<DIndexRange> for Range<usize> {
     fn from(range: DIndexRange) -> Range<usize> {
@@ -12,25 +64,33 @@ impl From<DIndexRange> for Range<usize> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct DIndexKey(Vec<DIndexRange>);
 
 impl DIndexKey {
     fn into_ranges(self) -> impl Iterator<Item = DIndexRange> {
         self.0.into_iter()
     }
+    fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 #[derive(Clone)]
 pub struct DIndex {
+    object_map: HashMap<DIndexObjectId, DIndexObject>,
     line_map: HashMap<String, usize>,
     lines: Vec<String>,
 }
 
 impl From<Vec<u8>> for DIndex {
     fn from(byte_array: Vec<u8>) -> DIndex {
-        let mut lines = Vec::new();
+        let mut object_map = HashMap::new();
+        let iter = byte_array.into_iter();
+        loop {}
+
         let mut line_map = HashMap::new();
+        let mut lines = Vec::new();
         let data = String::from_utf8_lossy_owned(byte_array);
         for line in data.split_inclusive("\n") {
             if !line_map.contains_key(line) {
@@ -38,43 +98,80 @@ impl From<Vec<u8>> for DIndex {
                 lines.push(line.to_string());
             }
         }
-        DIndex { line_map, lines }
+        DIndex {
+            object_map,
+            line_map,
+            lines,
+        }
     }
 }
 
+// Serializes the DIndex into bytes format
 impl From<DIndex> for Vec<u8> {
     fn from(index: DIndex) -> Vec<u8> {
-        index
-            .lines
-            .into_iter()
-            .map(String::into_bytes)
-            .flatten()
-            .collect()
+        let mut output = Vec::new();
+        let map_size = index.object_map.len() as u64;
+        output.extend(map_size.to_be_bytes());
+
+        for (object_id, value) in index.object_map {
+            // id
+            output.extend(object_id.into_bytes());
+
+            //parent id
+            output.extend(value.parent.into_bytes());
+
+            // length of data key
+            output.extend(
+                u64::try_from(value.data_key.len())
+                    .expect("usize > 64 ??")
+                    .to_be_bytes(),
+            );
+
+            // data key
+            for range in value.data_key.into_ranges() {
+                output.extend(range.into_bytes());
+            }
+        }
+
+        // index lines
+        output.extend(index.lines.into_iter().map(String::into_bytes).flatten());
+
+        output
     }
 }
 
 impl DIndex {
     pub fn new() -> DIndex {
         DIndex {
+            object_map: HashMap::new(),
             line_map: HashMap::new(),
             lines: Vec::new(),
         }
     }
 
+    // Create a new object in the DIndex containing the data in object_data
+    // Invariant: data with the same object_id will have the same data key for the same DIndex
+    pub fn new_object(&mut self, object_data: &str, parent: DIndexObjectId) -> DIndexObjectId {
+        let object_id = DIndexObjectId::from_object_data(object_data);
+        let data_key = self.key_from_data(object_data);
+        self.object_map
+            .insert(object_id, DIndexObject { parent, data_key });
+        object_id
+    }
     // Takes a string containing file data, adds it to the index, and returns
     // the file's key in the index
-    pub fn update(&mut self, file_data: &str) -> DIndexKey {
+    fn key_from_data(&mut self, object_data: &str) -> DIndexKey {
         let mut ranges = Vec::new();
         let mut range_start = 0;
         let mut range_end = 0;
 
-        for line in file_data.split_inclusive("\n") {
+        for line in object_data.split_inclusive("\n") {
             if !self.line_map.contains_key(line) {
                 self.line_map.insert(line.to_string(), self.lines.len());
                 self.lines.push(line.to_string());
             }
         }
-        for line in file_data.split_inclusive("\n") {
+        for line in object_data.split_inclusive("\n") {
             let line_num = *self.line_map.get(line).unwrap();
             if line_num != range_end {
                 ranges.push(DIndexRange((range_start, range_end)));
@@ -88,7 +185,7 @@ impl DIndex {
         DIndexKey(ranges)
     }
 
-    pub fn get(&mut self, key: DIndexKey) -> String {
+    fn data_from_key(&mut self, key: DIndexKey) -> String {
         let mut key = key.into_ranges();
         let mut data: Vec<String> = Vec::new();
         while let Some(range) = key.next() {
@@ -111,7 +208,7 @@ mod test {
     #[test]
     fn test_serialize_deserialize() {
         let mut index = DIndex::new();
-        let _ = [FILE1, FILE2, FILE3, FILE4, FILE5].map(|f| index.update(f));
+        let _ = [FILE1, FILE2, FILE3, FILE4, FILE5].map(|f| index.key_from_data(f));
         let serialized: Vec<u8> = index.clone().into();
         let deserialized: DIndex = serialized.into();
         assert!(index.lines == deserialized.lines);
@@ -122,8 +219,8 @@ mod test {
         let mut index = DIndex::new();
         let files = [FILE1, FILE2, FILE3, FILE4, FILE5];
         for file in files {
-            let key = index.update(file);
-            let data = index.get(key);
+            let key = index.key_from_data(file);
+            let data = index.data_from_key(key);
             assert!(file == data, "{file:?} | {data:?}");
         }
     }
@@ -131,15 +228,15 @@ mod test {
     #[test]
     fn test_update_new_file() {
         let mut index = DIndex::new();
-        let key = index.update(FILE1);
+        let key = index.key_from_data(FILE1);
         assert!(key.0.len() == 1);
     }
     #[test]
     fn test_update_subset_files() {
         let mut index = DIndex::new();
-        let key1 = index.update(FILE1);
-        let key2 = index.update(FILE2);
-        let key3 = index.update(FILE3);
+        let key1 = index.key_from_data(FILE1);
+        let key2 = index.key_from_data(FILE2);
+        let key3 = index.key_from_data(FILE3);
 
         assert!(key1.0.len() == 1);
         assert!(key2.0.len() == 2);
@@ -148,8 +245,8 @@ mod test {
     #[test]
     fn test_update_intersecting_files() {
         let mut index = DIndex::new();
-        let key1 = index.update(FILE1);
-        let key2 = index.update(FILE4);
+        let key1 = index.key_from_data(FILE1);
+        let key2 = index.key_from_data(FILE4);
         assert!(key1.0.len() == 1);
         assert!(key2.0.len() == 6);
     }
@@ -157,8 +254,8 @@ mod test {
     #[test]
     fn test_update_disjoint_files() {
         let mut index = DIndex::new();
-        let key1 = index.update(FILE1);
-        let key2 = index.update(FILE5);
+        let key1 = index.key_from_data(FILE1);
+        let key2 = index.key_from_data(FILE5);
         assert!(key1.0.len() == 1);
         assert!(key2.0.len() == 2);
     }
