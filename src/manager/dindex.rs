@@ -83,6 +83,7 @@ pub struct DIndex {
     lines: Vec<String>,
 }
 
+// Creates a DIndex from a byte array
 impl TryFrom<Vec<u8>> for DIndex {
     type Error = String;
     fn try_from(byte_array: Vec<u8>) -> Result<Self, Self::Error> {
@@ -195,7 +196,7 @@ impl DIndex {
 
     // Create a new object in the DIndex containing the data in object_data
     // Invariant: data with the same object_id will have the same data key for the same DIndex
-    pub fn new_object(&mut self, object_data: &str, parent: DIndexObjectId) -> DIndexObjectId {
+    pub fn insert_object(&mut self, object_data: &str, parent: DIndexObjectId) -> DIndexObjectId {
         let object_id = DIndexObjectId::from_object_data(object_data);
         let data_key = self.key_from_data(object_data);
         self.object_map
@@ -241,7 +242,7 @@ impl DIndex {
 
 #[cfg(test)]
 mod test {
-    use crate::manager::dindex::DIndex;
+    use crate::manager::dindex::{DIndex, DIndexObjectId};
 
     const FILE1: &str = "lines\nof\nthe\nfile\n";
     const FILE2: &str = "the\nfile\n";
@@ -252,11 +253,14 @@ mod test {
     #[test]
     fn test_serialize_deserialize() {
         let mut index = DIndex::new();
-        let _ = [FILE1, FILE2, FILE3, FILE4, FILE5].map(|f| index.key_from_data(f));
+        let root_object = index.insert_object(FILE1, DIndexObjectId::from_object_data(FILE1));
+        let _ = [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_object(f, root_object));
         let serialized: Vec<u8> = index.clone().into();
-        let deserialized: DIndex = serialized.into();
+        let deserialized: DIndex = serialized.try_into().unwrap();
         assert!(index.lines == deserialized.lines);
         assert!(index.line_map.len() == deserialized.line_map.len());
+        assert!(index.object_map.len() == 5);
+        assert!(index.object_map.len() == deserialized.object_map.len());
     }
     #[test]
     fn test_get_file() {

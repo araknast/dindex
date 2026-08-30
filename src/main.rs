@@ -2,10 +2,10 @@
 mod manager;
 use std::{env, fs};
 
-use crate::manager::DIndexManager;
+use crate::manager::DPackManager;
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let mut index: DIndexManager = DIndexManager::new();
+    let mut index: DPackManager = DPackManager::new();
     let filename = &args[1];
     // index.update(&fs::read_to_string(filename).unwrap());
 }
