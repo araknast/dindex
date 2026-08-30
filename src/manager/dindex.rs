@@ -30,7 +30,7 @@ impl From<DIndexRange> for [u8; 16] {
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
-struct DIndexObjectId([u8; DIndexObjectId::LEN_BYTES]);
+pub struct DIndexObjectId([u8; DIndexObjectId::LEN_BYTES]);
 
 impl DIndexObjectId {
     const LEN_BYTES: usize = 32;
