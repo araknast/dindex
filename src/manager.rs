@@ -1,33 +1,34 @@
 mod dindex;
-use std::collections::HashMap;
 
 use dindex::DIndex;
 use dindex::DIndexKey;
-pub struct Key(String);
-pub struct DIndexManager {
+// How we get string data out of the dpack
+struct DataKey((usize, DIndexKey));
+
+struct DPackObjectId(String);
+// a DIndex-ed object
+pub struct DPackObject {}
+pub struct DPackManager {
     indexes: Vec<DIndex>,
-    file_map: HashMap<String, DIndexKey>,
     data_root: String,
 }
 
-impl DIndexManager {
-    pub fn new() -> DIndexManager {
-        DIndexManager {
+impl DPackManager {
+    pub fn new() -> DPackManager {
+        DPackManager {
             indexes: Vec::new(),
-            file_map: HashMap::new(),
             data_root: String::new(),
         }
     }
 
-    pub fn load_from_path(path: String) -> DIndexManager {
-        DIndexManager {
+    pub fn load_from_path(path: String) -> DPackManager {
+        DPackManager {
             indexes: Vec::new(),
-            file_map: HashMap::new(),
             data_root: String::new(),
         }
     }
     pub fn persist() {}
-    pub fn add_file(file: String) {}
 
-    pub fn get_file(key: Key) {}
+    fn get_file_from_index(key: DataKey) {}
+    pub fn get_file() {}
 }
