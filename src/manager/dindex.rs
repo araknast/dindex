@@ -83,26 +83,70 @@ pub struct DIndex {
     lines: Vec<String>,
 }
 
-impl From<Vec<u8>> for DIndex {
-    fn from(byte_array: Vec<u8>) -> DIndex {
-        let mut object_map = HashMap::new();
-        let iter = byte_array.into_iter();
-        loop {}
+impl TryFrom<Vec<u8>> for DIndex {
+    type Error = String;
+    fn try_from(byte_array: Vec<u8>) -> Result<Self, Self::Error> {
+        fn take_u64(iter: &mut impl Iterator<Item = u8>) -> Result<u64, String> {
+            Ok(u64::from_be_bytes(take_bytes(iter)?))
+        }
 
+        fn take_bytes<const N: usize>(
+            iter: &mut impl Iterator<Item = u8>,
+        ) -> Result<[u8; N], String> {
+            let mut arr: [u8; N] = [0; N];
+            for i in 0..N {
+                arr[i] = iter.next().ok_or("File ended early.")?;
+            }
+            Ok(arr)
+        }
+
+        let mut object_map = HashMap::new();
+        let mut iter = byte_array.into_iter();
+
+        let map_size = take_u64(&mut iter)?;
+
+        for _ in 0..map_size {
+            let object_id: [u8; DIndexObjectId::LEN_BYTES] = take_bytes(&mut iter)?;
+            let parent_id: [u8; DIndexObjectId::LEN_BYTES] = take_bytes(&mut iter)?;
+            let data_key_len = take_u64(&mut iter)?;
+
+            let mut data_key_vec: Vec<DIndexRange> =
+                Vec::with_capacity(data_key_len.try_into().expect("capacity > usize"));
+
+            for _ in 0..data_key_len {
+                let range_start: usize = take_u64(&mut iter)?
+                    .try_into()
+                    .expect("range_start > usize");
+                let range_end: usize = take_u64(&mut iter)?
+                    .try_into()
+                    .expect("range_start > usize");
+                data_key_vec.push(DIndexRange((range_start, range_end)));
+            }
+
+            let data_key = DIndexKey(data_key_vec);
+
+            object_map.insert(
+                DIndexObjectId(object_id),
+                DIndexObject {
+                    parent: DIndexObjectId(parent_id),
+                    data_key,
+                },
+            );
+        }
         let mut line_map = HashMap::new();
         let mut lines = Vec::new();
-        let data = String::from_utf8_lossy_owned(byte_array);
+        let data = String::from_utf8_lossy_owned(iter.collect());
         for line in data.split_inclusive("\n") {
             if !line_map.contains_key(line) {
                 line_map.insert(line.to_string(), lines.len());
                 lines.push(line.to_string());
             }
         }
-        DIndex {
+        Ok(DIndex {
             object_map,
             line_map,
             lines,
-        }
+        })
     }
 }
 
