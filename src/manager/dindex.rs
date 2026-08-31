@@ -31,28 +31,28 @@ impl From<DIndexRange> for [u8; 16] {
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
-pub struct DIndexObjectId([u8; DIndexObjectId::LEN_BYTES]);
+pub struct DIndexVersionId([u8; DIndexVersionId::LEN_BYTES]);
 
-impl DIndexObjectId {
+impl DIndexVersionId {
     const LEN_BYTES: usize = 32;
-    pub fn from_object_data(data: &str) -> DIndexObjectId {
-        DIndexObjectId(Sha256::digest(data).into())
+    pub fn from_version_data(data: &str) -> DIndexVersionId {
+        DIndexVersionId(Sha256::digest(data).into())
     }
 
-    fn into_bytes(self) -> [u8; DIndexObjectId::LEN_BYTES] {
+    fn into_bytes(self) -> [u8; DIndexVersionId::LEN_BYTES] {
         self.into()
     }
 }
 
-impl From<DIndexObjectId> for [u8; DIndexObjectId::LEN_BYTES] {
-    fn from(id: DIndexObjectId) -> [u8; DIndexObjectId::LEN_BYTES] {
+impl From<DIndexVersionId> for [u8; DIndexVersionId::LEN_BYTES] {
+    fn from(id: DIndexVersionId) -> [u8; DIndexVersionId::LEN_BYTES] {
         id.0
     }
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct DIndexObject {
-    parent: DIndexObjectId,
+pub struct DIndexVersion {
+    parent: DIndexVersionId,
     data_key: DIndexKey,
 }
 
@@ -83,7 +83,7 @@ impl DIndexKey {
 #[derive(Clone)]
 pub struct DIndex {
     name: String,
-    object_map: HashMap<DIndexObjectId, DIndexObject>,
+    version_map: HashMap<DIndexVersionId, DIndexVersion>,
     line_map: HashMap<String, usize>,
     lines: Vec<String>,
 }
@@ -135,15 +135,15 @@ impl TryFrom<Vec<u8>> for DIndex {
             Err("File ended early.".into())
         }
 
-        let mut object_map = HashMap::new();
+        let mut version_map = HashMap::new();
         let mut iter = byte_array.into_iter();
 
         let name = take_name(&mut iter)?;
         let map_size = take_u64(&mut iter)?;
 
         for _ in 0..map_size {
-            let object_id: [u8; DIndexObjectId::LEN_BYTES] = take_bytes(&mut iter)?;
-            let parent_id: [u8; DIndexObjectId::LEN_BYTES] = take_bytes(&mut iter)?;
+            let version_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(&mut iter)?;
+            let parent_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(&mut iter)?;
             let data_key_len = take_u64(&mut iter)?;
 
             let mut data_key_vec: Vec<DIndexRange> =
@@ -161,10 +161,10 @@ impl TryFrom<Vec<u8>> for DIndex {
 
             let data_key = DIndexKey(data_key_vec);
 
-            object_map.insert(
-                DIndexObjectId(object_id),
-                DIndexObject {
-                    parent: DIndexObjectId(parent_id),
+            version_map.insert(
+                DIndexVersionId(version_id),
+                DIndexVersion {
+                    parent: DIndexVersionId(parent_id),
                     data_key,
                 },
             );
@@ -180,7 +180,7 @@ impl TryFrom<Vec<u8>> for DIndex {
         }
         Ok(DIndex {
             name,
-            object_map,
+            version_map,
             line_map,
             lines,
         })
@@ -191,14 +191,14 @@ impl TryFrom<Vec<u8>> for DIndex {
 impl From<DIndex> for Vec<u8> {
     fn from(index: DIndex) -> Vec<u8> {
         let mut output: Vec<u8> = Vec::new();
-        let map_size = index.object_map.len() as u64;
+        let map_size = index.version_map.len() as u64;
         output.extend(index.name.as_bytes());
         output.push(b'\n');
         output.extend(map_size.to_be_bytes());
 
-        for (object_id, value) in index.object_map {
+        for (version_id, value) in index.version_map {
             // id
-            output.extend(object_id.into_bytes());
+            output.extend(version_id.into_bytes());
 
             //parent id
             output.extend(value.parent.into_bytes());
@@ -227,7 +227,7 @@ impl DIndex {
     pub fn new(name: &str) -> DIndex {
         DIndex {
             name: String::from(name),
-            object_map: HashMap::new(),
+            version_map: HashMap::new(),
             line_map: HashMap::new(),
             lines: Vec::new(),
         }
@@ -236,37 +236,37 @@ impl DIndex {
     pub fn name(&self) -> String {
         self.name.clone()
     }
-    // Create a new object in the DIndex containing the data in object_data
-    // Invariant: data with the same object_id will have the same data key for the same DIndex
-    pub fn insert_object(&mut self, object_data: &str, parent: DIndexObjectId) -> DIndexObjectId {
-        let object_id = DIndexObjectId::from_object_data(object_data);
-        let data_key = self.key_from_data(object_data);
-        self.object_map
-            .insert(object_id, DIndexObject { parent, data_key });
-        object_id
+    // Create a new version in the DIndex containing the data in version_data
+    // Invariant: data with the same version_id will have the same data key for the same DIndex
+    pub fn insert_version(&mut self, version_data: &str, parent: DIndexVersionId) -> DIndexVersionId {
+        let version_id = DIndexVersionId::from_version_data(version_data);
+        let data_key = self.key_from_data(version_data);
+        self.version_map
+            .insert(version_id, DIndexVersion { parent, data_key });
+        version_id
     }
 
-    pub fn get_object_data(&self, id: DIndexObjectId) -> Option<String> {
-        Some(self.data_from_key(&self.get_object(id)?.data_key))
+    pub fn get_version_data(&self, id: DIndexVersionId) -> Option<String> {
+        Some(self.data_from_key(&self.get_version(id)?.data_key))
     }
 
-    pub fn get_object(&self, id: DIndexObjectId) -> Option<&DIndexObject> {
-        self.object_map.get(&id)
+    pub fn get_version(&self, id: DIndexVersionId) -> Option<&DIndexVersion> {
+        self.version_map.get(&id)
     }
     // Takes a string containing file data, adds it to the index, and returns
     // the file's key in the index
-    fn key_from_data(&mut self, object_data: &str) -> DIndexKey {
+    fn key_from_data(&mut self, version_data: &str) -> DIndexKey {
         let mut ranges = Vec::new();
         let mut range_start = 0;
         let mut range_end = 0;
 
-        for line in object_data.split_inclusive("\n") {
+        for line in version_data.split_inclusive("\n") {
             if !self.line_map.contains_key(line) {
                 self.line_map.insert(line.to_string(), self.lines.len());
                 self.lines.push(line.to_string());
             }
         }
-        for line in object_data.split_inclusive("\n") {
+        for line in version_data.split_inclusive("\n") {
             let line_num = *self.line_map.get(line).unwrap();
             if line_num != range_end {
                 ranges.push(DIndexRange((range_start, range_end)));
@@ -292,7 +292,7 @@ impl DIndex {
 
 #[cfg(test)]
 mod test {
-    use crate::manager::dindex::{DIndex, DIndexObjectId};
+    use crate::manager::dindex::{DIndex, DIndexVersionId};
 
     const FILE1: &str = "lines\nof\nthe\nfile\n";
     const FILE2: &str = "the\nfile\n";
@@ -304,31 +304,31 @@ mod test {
     fn test_serialize_deserialize() {
         let name = "New DIndex";
         let mut index = DIndex::new(name);
-        let root_object_id = index.insert_object(FILE1, DIndexObjectId::from_object_data(FILE1));
+        let root_version_id = index.insert_version(FILE1, DIndexVersionId::from_version_data(FILE1));
 
-        let child_object_ids =
-            [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_object(f, root_object_id));
+        let child_version_ids =
+            [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_version(f, root_version_id));
 
         let serialized: Vec<u8> = index.clone().into();
         let deserialized: DIndex = serialized.try_into().unwrap();
 
-        let root_object = index.get_object(root_object_id).unwrap();
-        let deserialized_root_object = deserialized.get_object(root_object_id).unwrap();
-        assert!(*root_object == *deserialized_root_object);
+        let root_version = index.get_version(root_version_id).unwrap();
+        let deserialized_root_version = deserialized.get_version(root_version_id).unwrap();
+        assert!(*root_version == *deserialized_root_version);
 
-        for child_object_id in child_object_ids {
-            let child_object = index.get_object(child_object_id).unwrap();
-            let deserialized_child_object = deserialized.get_object(child_object_id).unwrap();
+        for child_version_id in child_version_ids {
+            let child_version = index.get_version(child_version_id).unwrap();
+            let deserialized_child_version = deserialized.get_version(child_version_id).unwrap();
             assert!(
-                *child_object == *deserialized_child_object,
-                "{child_object:?}|{deserialized_child_object:?}"
+                *child_version == *deserialized_child_version,
+                "{child_version:?}|{deserialized_child_version:?}"
             );
         }
 
         assert!(index.lines == deserialized.lines);
         assert!(index.line_map.len() == deserialized.line_map.len());
-        assert!(index.object_map.len() == 5);
-        assert!(index.object_map.len() == deserialized.object_map.len());
+        assert!(index.version_map.len() == 5);
+        assert!(index.version_map.len() == deserialized.version_map.len());
         assert!(index.name == deserialized.name);
     }
     #[test]

@@ -1,11 +1,10 @@
 use thiserror::Error;
 
-use crate::manager::dindex::{DIndex, DIndexObjectId, DeserializationError};
+use crate::manager::dindex::{DIndex, DIndexVersionId, DeserializationError};
 use sha2::{Digest, Sha256};
 use std::{fmt::Debug, fs, io, path::Path};
 
 mod dindex;
-// TODO: object_id->version_id
 pub struct DIndexManager {
     data_root: String,
 }
@@ -39,17 +38,17 @@ impl DIndexManager {
         fs::write(path, Vec::<u8>::from(index))
     }
 
-    fn get(&self, name: &str, key: DIndexObjectId) -> Result<Option<String>, DIndexLoadError> {
+    fn get(&self, name: &str, key: DIndexVersionId) -> Result<Option<String>, DIndexLoadError> {
         let index = self.load_dindex(name)?;
-        Ok(index.get_object_data(key))
+        Ok(index.get_version_data(key))
     }
 
     fn insert(
         &self,
         name: &str,
         data: &str,
-        parent: DIndexObjectId,
-    ) -> Result<DIndexObjectId, DIndexLoadError> {
+        parent: DIndexVersionId,
+    ) -> Result<DIndexVersionId, DIndexLoadError> {
         let result = self.load_dindex(name);
 
         let mut index = if let Err(DIndexLoadError::Io(_)) = result {
@@ -58,9 +57,9 @@ impl DIndexManager {
             result?
         };
 
-        let object_id = index.insert_object(data, parent);
+        let version_id = index.insert_version(data, parent);
         self.persist_dindex(index)?;
-        Ok(object_id)
+        Ok(version_id)
     }
 }
 
@@ -68,7 +67,7 @@ impl DIndexManager {
 mod test {
     use assert_fs::fixture::PathChild;
 
-    use crate::manager::{DIndexManager, dindex::DIndexObjectId};
+    use crate::manager::{DIndexManager, dindex::DIndexVersionId};
 
     const FILE_NAME: &str = "file.txt";
 
@@ -89,13 +88,13 @@ mod test {
         let manager = DIndexManager::new(data_root);
         manager.create_data_root().unwrap();
 
-        let parent_id = DIndexObjectId::from_object_data(FILE_VERSIONS[0]);
-        let object_id = manager
+        let parent_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
+        let version_id = manager
             .insert(FILE_NAME, FILE_VERSIONS[0], parent_id)
             .unwrap();
 
-        let object = manager.get(FILE_NAME, object_id).unwrap().unwrap();
-        assert_eq!(FILE_VERSIONS[0], object);
+        let version = manager.get(FILE_NAME, version_id).unwrap().unwrap();
+        assert_eq!(FILE_VERSIONS[0], version);
     }
 
     #[test]
@@ -108,7 +107,7 @@ mod test {
         manager.create_data_root().unwrap();
 
         // insert the root version
-        let mut parent_id = DIndexObjectId::from_object_data(FILE_VERSIONS[0]);
+        let mut parent_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
         manager
             .insert(FILE_NAME, FILE_VERSIONS[0], parent_id)
             .unwrap();
@@ -117,11 +116,11 @@ mod test {
 
         // simulate file updates
         for version in FILE_VERSIONS {
-            let object_id = manager.insert(FILE_NAME, version, parent_id).unwrap();
-            version_ids.push(object_id);
-            let stored_data = manager.get(FILE_NAME, object_id).unwrap().unwrap();
+            let version_id = manager.insert(FILE_NAME, version, parent_id).unwrap();
+            version_ids.push(version_id);
+            let stored_data = manager.get(FILE_NAME, version_id).unwrap().unwrap();
             assert_eq!(version, stored_data);
-            parent_id = object_id;
+            parent_id = version_id;
         }
 
         for i in 0..FILE_VERSIONS.len() {
