@@ -1,3 +1,4 @@
+use core::fmt;
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, ops::Range};
 
@@ -84,17 +85,33 @@ pub struct DIndex {
     lines: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct DeserializationError(String);
+
+impl fmt::Display for DeserializationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl From<&str> for DeserializationError {
+    fn from(str: &str) -> DeserializationError {
+        DeserializationError(String::from(str))
+    }
+}
+
+impl std::error::Error for DeserializationError {}
+
 // Creates a DIndex from a byte array
 impl TryFrom<Vec<u8>> for DIndex {
-    type Error = String;
+    type Error = DeserializationError;
     fn try_from(byte_array: Vec<u8>) -> Result<Self, Self::Error> {
-        fn take_u64(iter: &mut impl Iterator<Item = u8>) -> Result<u64, String> {
+        fn take_u64(iter: &mut impl Iterator<Item = u8>) -> Result<u64, DeserializationError> {
             Ok(u64::from_be_bytes(take_bytes(iter)?))
         }
 
         fn take_bytes<const N: usize>(
             iter: &mut impl Iterator<Item = u8>,
-        ) -> Result<[u8; N], String> {
+        ) -> Result<[u8; N], DeserializationError> {
             let mut arr: [u8; N] = [0; N];
             for i in 0..N {
                 arr[i] = iter.next().ok_or("File ended early.")?;
@@ -102,7 +119,7 @@ impl TryFrom<Vec<u8>> for DIndex {
             Ok(arr)
         }
 
-        fn take_name(iter: &mut impl Iterator<Item = u8>) -> Result<String, String> {
+        fn take_name(iter: &mut impl Iterator<Item = u8>) -> Result<String, DeserializationError> {
             let mut data = Vec::new();
             while let Some(byte) = iter.next() {
                 if byte == b'\n' {
@@ -112,7 +129,7 @@ impl TryFrom<Vec<u8>> for DIndex {
                 }
             }
 
-            Err(String::from("File ended early."))
+            Err("File ended early.".into())
         }
 
         let mut object_map = HashMap::new();
@@ -213,6 +230,9 @@ impl DIndex {
         }
     }
 
+    pub fn name(&self) -> String {
+        self.name.clone()
+    }
     // Create a new object in the DIndex containing the data in object_data
     // Invariant: data with the same object_id will have the same data key for the same DIndex
     pub fn insert_object(&mut self, object_data: &str, parent: DIndexObjectId) -> DIndexObjectId {
