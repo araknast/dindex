@@ -86,14 +86,6 @@ impl DIndexKey {
     }
 }
 
-#[derive(Clone)]
-pub struct DIndex {
-    name: String,
-    version_map: HashMap<DIndexVersionId, DIndexVersion>,
-    line_map: HashMap<String, usize>,
-    lines: Vec<String>,
-}
-
 #[derive(Debug)]
 pub struct DeserializationError(String);
 
@@ -109,6 +101,14 @@ impl From<&str> for DeserializationError {
 }
 
 impl std::error::Error for DeserializationError {}
+
+#[derive(Clone)]
+pub struct DIndex {
+    name: String,
+    version_map: HashMap<DIndexVersionId, DIndexVersion>,
+    line_map: HashMap<String, usize>,
+    lines: Vec<String>,
+}
 
 // Creates a DIndex from a byte array
 impl TryFrom<Vec<u8>> for DIndex {
