@@ -302,7 +302,7 @@ impl DIndex {
 
 #[cfg(test)]
 mod test {
-    use crate::manager::dindex::{DIndex, DIndexVersionId};
+    use crate::dindex::{DIndex, DIndexVersionId};
 
     const FILE1: &str = "lines\nof\nthe\nfile\n";
     const FILE2: &str = "the\nfile\n";

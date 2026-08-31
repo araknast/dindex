@@ -1,10 +1,7 @@
-#![feature(string_from_utf8_lossy_owned)]
-mod manager;
 use std::env;
 use std::fs;
 
-use crate::manager::DIndexManager;
-use crate::manager::dindex::DIndexVersionId;
+use dindex::manager::{DIndexManager, DIndexVersionId};
 
 fn main() {
     let args: Vec<String> = env::args().collect();

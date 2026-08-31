@@ -1,10 +1,10 @@
 use thiserror::Error;
 
-use crate::manager::dindex::{DIndex, DIndexVersionId, DeserializationError};
+pub use crate::dindex::DIndexVersionId;
+use crate::dindex::{DIndex, DeserializationError};
 use sha2::{Digest, Sha256};
 use std::{fmt::Debug, fs, io, path::Path};
 
-pub mod dindex;
 pub struct DIndexManager {
     data_root: String,
 }
@@ -67,7 +67,7 @@ impl DIndexManager {
 mod test {
     use assert_fs::fixture::PathChild;
 
-    use crate::manager::{DIndexManager, dindex::DIndexVersionId};
+    use crate::{dindex::DIndexVersionId, manager::DIndexManager};
 
     const FILE_NAME: &str = "file.txt";
 
