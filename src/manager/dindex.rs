@@ -35,7 +35,7 @@ pub struct DIndexObjectId([u8; DIndexObjectId::LEN_BYTES]);
 
 impl DIndexObjectId {
     const LEN_BYTES: usize = 32;
-    fn from_object_data(data: &str) -> DIndexObjectId {
+    pub fn from_object_data(data: &str) -> DIndexObjectId {
         DIndexObjectId(Sha256::digest(data).into())
     }
 
