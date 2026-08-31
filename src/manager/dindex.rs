@@ -78,6 +78,7 @@ impl DIndexKey {
 
 #[derive(Clone)]
 pub struct DIndex {
+    name: String,
     object_map: HashMap<DIndexObjectId, DIndexObject>,
     line_map: HashMap<String, usize>,
     lines: Vec<String>,
@@ -101,9 +102,23 @@ impl TryFrom<Vec<u8>> for DIndex {
             Ok(arr)
         }
 
+        fn take_name(iter: &mut impl Iterator<Item = u8>) -> Result<String, String> {
+            let mut data = Vec::new();
+            while let Some(byte) = iter.next() {
+                if byte == b'\n' {
+                    return Ok(String::from_utf8_lossy_owned(data));
+                } else {
+                    data.push(byte)
+                }
+            }
+
+            Err(String::from("File ended early."))
+        }
+
         let mut object_map = HashMap::new();
         let mut iter = byte_array.into_iter();
 
+        let name = take_name(&mut iter)?;
         let map_size = take_u64(&mut iter)?;
 
         for _ in 0..map_size {
@@ -144,6 +159,7 @@ impl TryFrom<Vec<u8>> for DIndex {
             }
         }
         Ok(DIndex {
+            name,
             object_map,
             line_map,
             lines,
@@ -154,8 +170,10 @@ impl TryFrom<Vec<u8>> for DIndex {
 // Serializes the DIndex into bytes format
 impl From<DIndex> for Vec<u8> {
     fn from(index: DIndex) -> Vec<u8> {
-        let mut output = Vec::new();
+        let mut output: Vec<u8> = Vec::new();
         let map_size = index.object_map.len() as u64;
+        output.extend(index.name.as_bytes());
+        output.push(b'\n');
         output.extend(map_size.to_be_bytes());
 
         for (object_id, value) in index.object_map {
@@ -186,8 +204,9 @@ impl From<DIndex> for Vec<u8> {
 }
 
 impl DIndex {
-    pub fn new() -> DIndex {
+    pub fn new(name: &str) -> DIndex {
         DIndex {
+            name: String::from(name),
             object_map: HashMap::new(),
             line_map: HashMap::new(),
             lines: Vec::new(),
@@ -252,7 +271,8 @@ mod test {
 
     #[test]
     fn test_serialize_deserialize() {
-        let mut index = DIndex::new();
+        let name = "New DIndex";
+        let mut index = DIndex::new(name);
         let root_object = index.insert_object(FILE1, DIndexObjectId::from_object_data(FILE1));
         let _ = [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_object(f, root_object));
         let serialized: Vec<u8> = index.clone().into();
@@ -261,10 +281,11 @@ mod test {
         assert!(index.line_map.len() == deserialized.line_map.len());
         assert!(index.object_map.len() == 5);
         assert!(index.object_map.len() == deserialized.object_map.len());
+        assert!(index.name == deserialized.name);
     }
     #[test]
     fn test_get_file() {
-        let mut index = DIndex::new();
+        let mut index = DIndex::new("");
         let files = [FILE1, FILE2, FILE3, FILE4, FILE5];
         for file in files {
             let key = index.key_from_data(file);
@@ -275,13 +296,13 @@ mod test {
 
     #[test]
     fn test_update_new_file() {
-        let mut index = DIndex::new();
+        let mut index = DIndex::new("");
         let key = index.key_from_data(FILE1);
         assert!(key.0.len() == 1);
     }
     #[test]
     fn test_update_subset_files() {
-        let mut index = DIndex::new();
+        let mut index = DIndex::new("");
         let key1 = index.key_from_data(FILE1);
         let key2 = index.key_from_data(FILE2);
         let key3 = index.key_from_data(FILE3);
@@ -292,7 +313,7 @@ mod test {
     }
     #[test]
     fn test_update_intersecting_files() {
-        let mut index = DIndex::new();
+        let mut index = DIndex::new("");
         let key1 = index.key_from_data(FILE1);
         let key2 = index.key_from_data(FILE4);
         assert!(key1.0.len() == 1);
@@ -301,7 +322,7 @@ mod test {
 
     #[test]
     fn test_update_disjoint_files() {
-        let mut index = DIndex::new();
+        let mut index = DIndex::new("");
         let key1 = index.key_from_data(FILE1);
         let key2 = index.key_from_data(FILE5);
         assert!(key1.0.len() == 1);
