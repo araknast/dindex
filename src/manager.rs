@@ -4,13 +4,13 @@ use crate::manager::dindex::{DIndex, DIndexVersionId, DeserializationError};
 use sha2::{Digest, Sha256};
 use std::{fmt::Debug, fs, io, path::Path};
 
-mod dindex;
+pub mod dindex;
 pub struct DIndexManager {
     data_root: String,
 }
 
 #[derive(Debug, Error)]
-enum DIndexLoadError {
+pub enum DIndexLoadError {
     #[error("I/O Error loading DIndex")]
     Io(#[from] io::Error),
     #[error("Error deserializing DIndex")]
@@ -38,12 +38,12 @@ impl DIndexManager {
         fs::write(path, Vec::<u8>::from(index))
     }
 
-    fn get(&self, name: &str, key: DIndexVersionId) -> Result<Option<String>, DIndexLoadError> {
+    pub fn get(&self, name: &str, key: DIndexVersionId) -> Result<Option<String>, DIndexLoadError> {
         let index = self.load_dindex(name)?;
         Ok(index.get_version_data(key))
     }
 
-    fn insert(
+    pub fn insert(
         &self,
         name: &str,
         data: &str,

@@ -50,6 +50,12 @@ impl From<DIndexVersionId> for [u8; DIndexVersionId::LEN_BYTES] {
     }
 }
 
+impl From<[u8; DIndexVersionId::LEN_BYTES]> for DIndexVersionId {
+    fn from(arr: [u8; DIndexVersionId::LEN_BYTES]) -> DIndexVersionId {
+        DIndexVersionId(arr)
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct DIndexVersion {
     parent: DIndexVersionId,
@@ -238,7 +244,11 @@ impl DIndex {
     }
     // Create a new version in the DIndex containing the data in version_data
     // Invariant: data with the same version_id will have the same data key for the same DIndex
-    pub fn insert_version(&mut self, version_data: &str, parent: DIndexVersionId) -> DIndexVersionId {
+    pub fn insert_version(
+        &mut self,
+        version_data: &str,
+        parent: DIndexVersionId,
+    ) -> DIndexVersionId {
         let version_id = DIndexVersionId::from_version_data(version_data);
         let data_key = self.key_from_data(version_data);
         self.version_map
@@ -304,7 +314,8 @@ mod test {
     fn test_serialize_deserialize() {
         let name = "New DIndex";
         let mut index = DIndex::new(name);
-        let root_version_id = index.insert_version(FILE1, DIndexVersionId::from_version_data(FILE1));
+        let root_version_id =
+            index.insert_version(FILE1, DIndexVersionId::from_version_data(FILE1));
 
         let child_version_ids =
             [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_version(f, root_version_id));
