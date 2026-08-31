@@ -30,7 +30,7 @@ impl From<DIndexRange> for [u8; 16] {
     }
 }
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub struct DIndexObjectId([u8; DIndexObjectId::LEN_BYTES]);
 
 impl DIndexObjectId {
@@ -50,7 +50,7 @@ impl From<DIndexObjectId> for [u8; DIndexObjectId::LEN_BYTES] {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct DIndexObject {
     parent: DIndexObjectId,
     data_key: DIndexKey,
@@ -304,10 +304,27 @@ mod test {
     fn test_serialize_deserialize() {
         let name = "New DIndex";
         let mut index = DIndex::new(name);
-        let root_object = index.insert_object(FILE1, DIndexObjectId::from_object_data(FILE1));
-        let _ = [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_object(f, root_object));
+        let root_object_id = index.insert_object(FILE1, DIndexObjectId::from_object_data(FILE1));
+
+        let child_object_ids =
+            [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_object(f, root_object_id));
+
         let serialized: Vec<u8> = index.clone().into();
         let deserialized: DIndex = serialized.try_into().unwrap();
+
+        let root_object = index.get_object(root_object_id).unwrap();
+        let deserialized_root_object = deserialized.get_object(root_object_id).unwrap();
+        assert!(*root_object == *deserialized_root_object);
+
+        for child_object_id in child_object_ids {
+            let child_object = index.get_object(child_object_id).unwrap();
+            let deserialized_child_object = deserialized.get_object(child_object_id).unwrap();
+            assert!(
+                *child_object == *deserialized_child_object,
+                "{child_object:?}|{deserialized_child_object:?}"
+            );
+        }
+
         assert!(index.lines == deserialized.lines);
         assert!(index.line_map.len() == deserialized.line_map.len());
         assert!(index.object_map.len() == 5);
