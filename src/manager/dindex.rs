@@ -16,7 +16,7 @@ impl From<DIndexRange> for [u8; 16] {
     fn from(range: DIndexRange) -> [u8; 16] {
         let mut arr = [0; 16];
         arr[..8].copy_from_slice(
-            &u64::try_from(range.0.1)
+            &u64::try_from(range.0.0)
                 .expect("usize > 64 ??")
                 .to_be_bytes(),
         );
