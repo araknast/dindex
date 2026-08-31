@@ -2,7 +2,7 @@ use core::fmt;
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, ops::Range};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 struct DIndexRange((usize, usize));
 
 impl DIndexRange {
@@ -51,7 +51,7 @@ impl From<DIndexObjectId> for [u8; DIndexObjectId::LEN_BYTES] {
 }
 
 #[derive(Clone)]
-struct DIndexObject {
+pub struct DIndexObject {
     parent: DIndexObjectId,
     data_key: DIndexKey,
 }
@@ -69,6 +69,9 @@ impl From<DIndexRange> for Range<usize> {
 pub struct DIndexKey(Vec<DIndexRange>);
 
 impl DIndexKey {
+    fn ranges(&self) -> impl Iterator<Item = &DIndexRange> {
+        self.0.iter()
+    }
     fn into_ranges(self) -> impl Iterator<Item = DIndexRange> {
         self.0.into_iter()
     }
@@ -242,6 +245,14 @@ impl DIndex {
             .insert(object_id, DIndexObject { parent, data_key });
         object_id
     }
+
+    pub fn get_object_data(&self, id: DIndexObjectId) -> Option<String> {
+        Some(self.data_from_key(&self.get_object(id)?.data_key))
+    }
+
+    pub fn get_object(&self, id: DIndexObjectId) -> Option<&DIndexObject> {
+        self.object_map.get(&id)
+    }
     // Takes a string containing file data, adds it to the index, and returns
     // the file's key in the index
     fn key_from_data(&mut self, object_data: &str) -> DIndexKey {
@@ -269,11 +280,11 @@ impl DIndex {
         DIndexKey(ranges)
     }
 
-    fn data_from_key(&mut self, key: DIndexKey) -> String {
-        let mut key = key.into_ranges();
+    fn data_from_key(&self, key: &DIndexKey) -> String {
+        let mut key = key.ranges();
         let mut data: Vec<String> = Vec::new();
         while let Some(range) = key.next() {
-            data.extend_from_slice(&self.lines[Range::from(range)]);
+            data.extend_from_slice(&self.lines[Range::from(*range)]);
         }
         data.join("")
     }
@@ -309,7 +320,7 @@ mod test {
         let files = [FILE1, FILE2, FILE3, FILE4, FILE5];
         for file in files {
             let key = index.key_from_data(file);
-            let data = index.data_from_key(key);
+            let data = index.data_from_key(&key);
             assert!(file == data, "{file:?} | {data:?}");
         }
     }
