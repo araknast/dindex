@@ -3,7 +3,12 @@ use thiserror::Error;
 pub use crate::dindex::DIndexVersionId;
 use crate::dindex::{DIndex, DeserializationError};
 use sha2::{Digest, Sha256};
-use std::{fmt::Debug, fs, io, path::Path};
+use std::{
+    fmt::Debug,
+    fs::{self, File},
+    io,
+    path::Path,
+};
 
 pub struct DIndexManager {
     data_root: String,
@@ -30,12 +35,18 @@ impl DIndexManager {
 
     fn load_dindex(&self, name: &str) -> Result<DIndex, DIndexLoadError> {
         let path = Path::new(&self.data_root).join(hex::encode(Sha256::digest(name)));
-        DIndex::try_from(fs::read(path)?).map_err(Into::into)
+        let file = File::open(path)?;
+        let mut data = Vec::new();
+        zstd::stream::copy_decode(file, &mut data)?;
+        DIndex::try_from(data).map_err(Into::into)
     }
     fn persist_dindex(&self, index: DIndex) -> io::Result<()> {
         let name_hash: String = hex::encode(Sha256::digest(index.name()));
         let path = Path::new(&self.data_root).join(name_hash);
-        fs::write(path, Vec::<u8>::from(index))
+        let file = File::create(path)?;
+        let data: &[u8] = &Vec::<u8>::from(index);
+        zstd::stream::copy_encode(data, file, 3)?;
+        Ok(())
     }
 
     pub fn get(&self, name: &str, key: DIndexVersionId) -> Result<Option<String>, DIndexLoadError> {
