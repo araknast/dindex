@@ -11,7 +11,7 @@ fn main() {
     }
     let operation = &args[1];
     let file_path = &args[2];
-    let data_root = "./data";
+    let data_root = &args[3];
 
     let index: DIndexManager = DIndexManager::new(data_root);
     index.create_data_root().unwrap();
@@ -19,8 +19,8 @@ fn main() {
     match operation.as_str() {
         "put" => {
             let file_data: String = fs::read_to_string(file_path).unwrap();
-            let parent_id = if args.len() > 3 {
-                TryInto::<[u8; 32]>::try_into(hex::decode(&args[2]).unwrap())
+            let parent_id = if args.len() > 4 {
+                TryInto::<[u8; 32]>::try_into(hex::decode(&args[4]).unwrap())
                     .unwrap()
                     .into()
             } else {
@@ -33,7 +33,7 @@ fn main() {
         }
         "get" => {
             let version_id: DIndexVersionId = if args.len() > 3 {
-                TryInto::<[u8; 32]>::try_into(hex::decode(&args[3]).unwrap())
+                TryInto::<[u8; 32]>::try_into(hex::decode(&args[4]).unwrap())
                     .unwrap()
                     .into()
             } else {
