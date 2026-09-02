@@ -1,5 +1,6 @@
 #!/bin/sh
 
+dindex="./target/release/dindex"
 dir="$1"
 data="$2"
 if test -z $dir || test -z $data
@@ -16,7 +17,7 @@ for commit in $(git log --format="%H"); do
 	for file in $(find $dir \( -type d \( -name ".git" -o -name "node_modules" \) -prune \) -o -type f -print)
 	do
 		if isutf8 -q $file; then
-			./dindex put "$file" "$data" >/dev/null
+			$dindex put "$file" "$data" >/dev/null
 		else
 			cp "$file" $data/bin
 		fi
