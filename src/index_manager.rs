@@ -33,6 +33,10 @@ impl DIndexManager {
         fs::create_dir_all(&self.data_root)
     }
 
+    pub fn data_root(&self) -> String {
+        self.data_root.clone()
+    }
+
     fn load_dindex(&self, name: &str) -> Result<DIndex, DIndexLoadError> {
         let path = Path::new(&self.data_root).join(hex::encode(Sha256::digest(name)));
         let file = File::open(path)?;
@@ -78,7 +82,7 @@ impl DIndexManager {
 mod test {
     use assert_fs::fixture::PathChild;
 
-    use crate::{dindex::DIndexVersionId, manager::DIndexManager};
+    use crate::{dindex::DIndexVersionId, index_manager::DIndexManager};
 
     const FILE_NAME: &str = "file.txt";
 
