@@ -10,7 +10,7 @@ fi
 mkdir -p $data/bin
 cd $dir
 git reset --hard origin/HEAD
-for commit in $(git log --format="%H"); do
+for commit in $(git log --format="%H" --reverse); do
 	git checkout "$commit"
 
 	cd ..
