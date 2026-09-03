@@ -103,10 +103,7 @@ mod test {
         let manager = DIndexManager::new(data_root);
         manager.create_data_root().unwrap();
 
-        let parent_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
-        let version_id = manager
-            .insert(FILE_NAME, FILE_VERSIONS[0], Some(parent_id))
-            .unwrap();
+        let version_id = manager.insert(FILE_NAME, FILE_VERSIONS[0], None).unwrap();
 
         let version = manager.get(FILE_NAME, version_id).unwrap().unwrap();
         assert_eq!(FILE_VERSIONS[0], version);
@@ -123,9 +120,7 @@ mod test {
 
         // insert the root version
         let mut parent_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
-        manager
-            .insert(FILE_NAME, FILE_VERSIONS[0], Some(parent_id))
-            .unwrap();
+        manager.insert(FILE_NAME, FILE_VERSIONS[0], None).unwrap();
 
         let mut version_ids = Vec::with_capacity(FILE_VERSIONS.len());
 

@@ -305,7 +305,7 @@ impl DIndex {
 
 #[cfg(test)]
 mod test {
-    use crate::dindex::{DIndex, DIndexVersionId};
+    use crate::dindex::DIndex;
 
     const FILE1: &str = "lines\nof\nthe\nfile\n";
     const FILE2: &str = "the\nfile\n";
@@ -317,8 +317,7 @@ mod test {
     fn test_serialize_deserialize() {
         let name = "New DIndex";
         let mut index = DIndex::new(name);
-        let root_version_id =
-            index.insert_version(FILE1, Some(DIndexVersionId::from_version_data(FILE1)));
+        let root_version_id = index.insert_version(FILE1, None);
 
         let child_version_ids =
             [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_version(f, Some(root_version_id)));
