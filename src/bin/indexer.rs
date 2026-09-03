@@ -12,8 +12,6 @@ fn main() {
     let operation = &args[1];
     let file_path = &args[2];
     let data_root = &args[3];
-    let snap_store = format!("{}/{}", data_root, "snaps");
-    let head_snap = format!("{}/{}", data_root, "HEAD");
 
     let index: DIndexManager = DIndexManager::new(data_root);
     index.create_data_root().unwrap();
@@ -29,7 +27,9 @@ fn main() {
                 DIndexVersionId::from_version_data(&file_data)
             };
 
-            let version_id = index.insert(file_path, &file_data, parent_id).unwrap();
+            let version_id = index
+                .insert(file_path, &file_data, Some(parent_id))
+                .unwrap();
             let version_id_str = hex::encode(<[u8; 32]>::from(version_id));
             println!("{version_id_str}");
         }
