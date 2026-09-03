@@ -247,9 +247,10 @@ impl DIndex {
     pub fn insert_version(
         &mut self,
         version_data: &str,
-        parent: DIndexVersionId,
+        parent: Option<DIndexVersionId>,
     ) -> DIndexVersionId {
         let version_id = DIndexVersionId::from_version_data(version_data);
+        let parent = parent.unwrap_or(version_id);
         let data_key = self.key_from_data(version_data);
         self.version_map
             .insert(version_id, DIndexVersion { parent, data_key });
@@ -315,10 +316,10 @@ mod test {
         let name = "New DIndex";
         let mut index = DIndex::new(name);
         let root_version_id =
-            index.insert_version(FILE1, DIndexVersionId::from_version_data(FILE1));
+            index.insert_version(FILE1, Some(DIndexVersionId::from_version_data(FILE1)));
 
         let child_version_ids =
-            [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_version(f, root_version_id));
+            [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_version(f, Some(root_version_id)));
 
         let serialized: Vec<u8> = index.clone().into();
         let deserialized: DIndex = serialized.try_into().unwrap();
