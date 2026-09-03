@@ -250,10 +250,12 @@ impl DIndex {
         parent: Option<DIndexVersionId>,
     ) -> DIndexVersionId {
         let version_id = DIndexVersionId::from_version_data(version_data);
-        let parent = parent.unwrap_or(version_id);
-        let data_key = self.key_from_data(version_data);
-        self.version_map
-            .insert(version_id, DIndexVersion { parent, data_key });
+        if parent != Some(version_id) {
+            let parent = parent.unwrap_or(version_id);
+            let data_key = self.key_from_data(version_data);
+            self.version_map
+                .insert(version_id, DIndexVersion { parent, data_key });
+        }
         version_id
     }
 
