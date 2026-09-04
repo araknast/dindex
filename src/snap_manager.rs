@@ -153,7 +153,7 @@ impl SnapshotManager {
 mod test {
     // Note: indexes and data are currently being kept separate, there is
     // currently no logic for the snapshot manager to ignore an index directory
-    use std::{fs, path::PathBuf};
+    use std::fs;
 
     use assert_fs::{
         TempDir,
@@ -192,7 +192,7 @@ mod test {
     }
     #[test]
     fn test_new_snapshot() {
-        let (tmp, data_dir, manager) = initialize_test_dir();
+        let (_tmp, data_dir, manager) = initialize_test_dir();
         let snap = manager.snapshot_from_dir(data_dir.path(), None).unwrap();
         let v1_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
         for path in FILE_NAMES {
