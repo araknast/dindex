@@ -181,7 +181,7 @@ mod test {
         fs::create_dir_all(&index_dir).unwrap();
         fs::create_dir_all(&data_dir).unwrap();
         for name in FILE_NAMES {
-            let mut file_path = data_dir.path().to_path_buf().join(name);
+            let file_path = data_dir.path().to_path_buf().join(name);
             fs::write(file_path, FILE_VERSIONS[0]).unwrap();
         }
 
