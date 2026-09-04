@@ -185,7 +185,7 @@ mod test {
             fs::write(file_path, FILE_VERSIONS[0]).unwrap();
         }
 
-        let index_manager = DIndexManager::new(&index_dir.as_os_str().to_string_lossy());
+        let index_manager = DIndexManager::new(index_dir);
         let snapshot_manager = SnapshotManager::new(index_manager);
 
         (tmp, data_dir, snapshot_manager)

@@ -7,11 +7,11 @@ use std::{
     fmt::Debug,
     fs::{self, File},
     io,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 pub struct DIndexManager {
-    data_root: String,
+    data_root: PathBuf,
 }
 
 #[derive(Debug, Error)]
@@ -23,9 +23,9 @@ pub enum DIndexLoadError {
 }
 
 impl DIndexManager {
-    pub fn new(data_root: &str) -> DIndexManager {
+    pub fn new(data_root: impl AsRef<Path>) -> DIndexManager {
         DIndexManager {
-            data_root: String::from(data_root),
+            data_root: data_root.as_ref().to_path_buf(),
         }
     }
 
@@ -33,8 +33,8 @@ impl DIndexManager {
         fs::create_dir_all(&self.data_root)
     }
 
-    pub fn data_root(&self) -> String {
-        self.data_root.clone()
+    pub fn data_root(&self) -> &Path {
+        self.data_root.as_path()
     }
 
     fn load_dindex(&self, name: &str) -> Result<DIndex, DIndexLoadError> {
