@@ -11,7 +11,7 @@ a DIndex is named and its name is the same as the name of the file it versions
 
 `dindex get <file name> <data dir> <version id>` will get a fille at a particular version
 
-## snap.sh
-for moving git repos into dindexes
+## move.sh
+for moving git repos into dindex snapshots
 
-`./snap.sh <repo path> <data dir>`
+`./move.sh <repo path> <data dir>`
