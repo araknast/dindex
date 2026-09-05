@@ -1,8 +1,8 @@
 #!/bin/sh
 
-dindex="./target/release/indexer"
-dir="$1"
-data="$2"
+dindex=$(realpath ./target/release/indexer)
+dir="$(realpath $1)"
+data="$(realpath $2)"
 if test -z $dir || test -z $data
 then
 	exit
@@ -13,7 +13,6 @@ git reset --hard origin/HEAD
 for commit in $(git log --format="%H" --reverse); do
 	git checkout "$commit"
 
-	cd ..
 	for file in $(find $dir \( -type d \( -name ".git" -o -name "node_modules" \) -prune \) -o -type f -print)
 	do
 		if isutf8 -q $file; then
@@ -23,6 +22,6 @@ for commit in $(git log --format="%H" --reverse); do
 		fi
 	done
 	du -bsh $data
-	cd $dir 
+	cd $dir
 done
 zstd -q --rm $data/bin/*
