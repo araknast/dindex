@@ -1,3 +1,4 @@
+use hex::FromHexError;
 use std::{
     collections::HashMap,
     fs, io,
@@ -6,18 +7,20 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    dindex::DIndexVersionId,
-    index_manager::{self, DIndexLoadError, DIndexManager},
+    dindex::{self, DIndexVersionId},
+    index_manager::{DIndexLoadError, DIndexManager},
 };
 
 #[derive(Debug)]
 struct Snapshot {
     entries: HashMap<PathBuf, DIndexVersionId>,
+    parent_id: Option<DIndexVersionId>,
 }
 impl Snapshot {
-    fn new() -> Snapshot {
+    fn new(parent_id: Option<DIndexVersionId>) -> Snapshot {
         Snapshot {
             entries: HashMap::new(),
+            parent_id,
         }
     }
     fn update_entry(&mut self, path: impl AsRef<Path>, id: DIndexVersionId) {
@@ -33,9 +36,15 @@ impl Snapshot {
 impl From<Snapshot> for String {
     fn from(snap: Snapshot) -> String {
         let mut string = String::new();
+        if let Some(parent_id) = snap.parent_id {
+            string.push_str(&hex::encode(parent_id));
+            string.push_str("\n");
+        } else {
+            string.push('\0');
+            string.push_str("\n");
+        }
         for (path, id_str) in snap.entries {
             let name = path.as_os_str().to_string_lossy();
-            let id_str: [u8; 32] = id_str.into();
             string.push_str(&name);
             string.push_str(" ");
             string.push_str(&hex::encode(id_str));
@@ -45,13 +54,70 @@ impl From<Snapshot> for String {
     }
 }
 
+impl TryFrom<String> for Snapshot {
+    type Error = SnapshotReadError;
+    fn try_from(data: String) -> Result<Snapshot, Self::Error> {
+        let mut entries = HashMap::new();
+        let mut iter = data.lines();
+        let parent_id_str = iter.next().ok_or(SnapshotReadError::EarlyTermination)?;
+        let parent_id: Option<DIndexVersionId> = if parent_id_str == "\0" {
+            None
+        } else {
+            Some(hex::decode(parent_id_str)?.try_into()?)
+        };
+
+        for line in iter {
+            let mut split = line.split(" ");
+            let name = split.next().ok_or(SnapshotReadError::EarlyTermination)?;
+            let id: DIndexVersionId =
+                hex::decode(split.next().ok_or(SnapshotReadError::EarlyTermination)?)?
+                    .try_into()?;
+            entries.insert(PathBuf::from(name), id);
+        }
+
+        Ok(Snapshot { parent_id, entries })
+    }
+}
+
 #[derive(Debug, Error)]
-pub enum SnapshotCreationError {
-    #[error("I/O Attempting to create snapshot")]
-    Io(#[from] io::Error),
-    #[error("Could not create snapshot, could not load a file's DIndex")]
+#[error("Failed to parse snapshot data")]
+pub enum SnapshotReadError {
+    #[error("Could not parse snapshot id")]
+    ObjectIdParse(#[from] FromHexError),
+    #[error("File ended early")]
+    EarlyTermination,
+    #[error("Invalid snapshot id")]
+    InvalidId(#[from] dindex::DeserializationError),
+}
+
+#[derive(Debug, Error)]
+pub enum SnapshotPersistError {
+    #[error("Could not load the snapshot DIndex")]
     DIndexLoad(#[from] DIndexLoadError),
 }
+
+#[derive(Debug, Error)]
+pub enum SnapshotLoadError {
+    #[error("Error reading snapshot data")]
+    Read(#[from] SnapshotReadError),
+    #[error("Could not load the snapshot DIndex")]
+    DIndexLoad(#[from] DIndexLoadError),
+}
+
+#[derive(Debug, Error)]
+pub enum SnapshotCreationError {
+    #[error("I/O error attempting to create snapshot")]
+    Io(#[from] io::Error),
+    #[error("Could not load the file's DIndex")]
+    DIndexLoad(#[from] DIndexLoadError),
+    #[error("Could not load the parent snapshot")]
+    ParentSnapLoad(#[from] SnapshotLoadError),
+    #[error("Parent snapshot does not exist")]
+    ParentSnapDoesNotExist,
+    #[error("Could not persist snapshot")]
+    SnapshotPersist(#[from] SnapshotPersistError),
+}
+
 struct SnapshotManager {
     snap_index_path: String,
     head_snap_path: String,
@@ -86,10 +152,40 @@ impl SnapshotManager {
         }
     }
 
+    pub fn init_dirs(&self) -> io::Result<()> {
+        self.data_index_manager.create_data_root()?;
+        self.snap_index_manager.create_data_root()?;
+        Ok(())
+    }
+
     fn get_head(&self) -> Option<DIndexVersionId> {
         None
     }
-    fn update_snapshot(&self, mut snap: Snapshot) -> Result<Snapshot, SnapshotCreationError> {
+
+    fn get_snapshot_by_id(
+        &self,
+        id: DIndexVersionId,
+    ) -> Result<Option<Snapshot>, SnapshotLoadError> {
+        let snap_data = self.snap_index_manager.get(Self::SNAP_INDEX_NAME, id)?;
+        if let Some(snap_data) = snap_data {
+            Ok(Some(Snapshot::try_from(snap_data)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn persist_snapshot(&self, snap: Snapshot) -> Result<DIndexVersionId, SnapshotPersistError> {
+        let parent_id = snap.parent_id;
+        let snap_data: String = snap.into();
+        self.snap_index_manager
+            .insert(Self::SNAP_INDEX_NAME, &snap_data, parent_id)
+            .map_err(Into::into)
+    }
+
+    fn update_snapshot(
+        &self,
+        mut snap: Snapshot,
+    ) -> Result<DIndexVersionId, SnapshotCreationError> {
         let mut for_removal = Vec::new();
         for (path, version_id) in &mut snap.entries {
             if !path.is_file() {
@@ -110,18 +206,22 @@ impl SnapshotManager {
         for path in for_removal {
             snap.entries.remove(&path);
         }
-        Ok(snap)
+        self.persist_snapshot(snap).map_err(Into::into)
     }
     // Creates a snapshot from the contents of a directory
     fn snapshot_from_dir(
         &self,
         path: impl AsRef<Path>,
-        parent: Option<Snapshot>,
-    ) -> Result<Snapshot, SnapshotCreationError> {
-        let mut snap = if let Some(parent) = parent {
-            self.update_snapshot(parent)?
-        } else {
-            Snapshot::new()
+        parent_id: Option<DIndexVersionId>,
+    ) -> Result<DIndexVersionId, SnapshotCreationError> {
+        let mut snap = Snapshot::new(parent_id);
+
+        let parent_snap: Option<Snapshot> = match parent_id {
+            Some(parent_id) => Some(
+                self.get_snapshot_by_id(parent_id)?
+                    .ok_or(SnapshotCreationError::ParentSnapDoesNotExist)?,
+            ),
+            None => None,
         };
 
         fn process_dir(
@@ -137,7 +237,7 @@ impl SnapshotManager {
                     let version = index_manager.insert(
                         &path.as_os_str().to_string_lossy(),
                         &fs::read_to_string(&path)?,
-                        None,
+                        None, // TODO
                     )?;
                     snap.update_entry(&path, version);
                 }
@@ -145,7 +245,7 @@ impl SnapshotManager {
             Ok(())
         }
         process_dir(path, &mut snap, &self.data_index_manager)?;
-        Ok(snap)
+        self.persist_snapshot(snap).map_err(Into::into)
     }
 }
 
@@ -153,7 +253,7 @@ impl SnapshotManager {
 mod test {
     // Note: indexes and data are currently being kept separate, there is
     // currently no logic for the snapshot manager to ignore an index directory
-    use std::fs;
+    use std::{fs, path::Path};
 
     use assert_fs::{
         TempDir,
@@ -161,7 +261,9 @@ mod test {
     };
 
     use crate::{
-        dindex::DIndexVersionId, index_manager::DIndexManager, snap_manager::SnapshotManager,
+        dindex::DIndexVersionId,
+        index_manager::DIndexManager,
+        snap_manager::{Snapshot, SnapshotManager},
     };
     const FILE_NAMES: [&str; 3] = ["file1.txt", "file2.txt", "file3.txt"];
 
@@ -187,13 +289,24 @@ mod test {
 
         let index_manager = DIndexManager::new(index_dir);
         let snapshot_manager = SnapshotManager::new(index_manager);
+        snapshot_manager.init_dirs().unwrap();
 
         (tmp, data_dir, snapshot_manager)
     }
+
+    fn new_snap_object(
+        manager: SnapshotManager,
+        data_dir: &Path,
+        parent_id: Option<DIndexVersionId>,
+    ) -> Snapshot {
+        let snap_id = manager.snapshot_from_dir(data_dir, parent_id).unwrap();
+        manager.get_snapshot_by_id(snap_id).unwrap().unwrap()
+    }
+
     #[test]
     fn test_new_snapshot() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = manager.snapshot_from_dir(data_dir.path(), None).unwrap();
+        let snap = new_snap_object(manager, data_dir.path(), None);
         let v1_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
         for path in FILE_NAMES {
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -210,9 +323,7 @@ mod test {
             let full_path = data_dir.path().to_path_buf().join(path);
             fs::write(full_path, FILE_VERSIONS[i + 1]).unwrap();
         }
-        let snap = manager
-            .snapshot_from_dir(data_dir.path(), Some(snap))
-            .unwrap();
+        let snap = new_snap_object(manager, &data_dir.path(), Some(snap));
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -234,9 +345,7 @@ mod test {
         let new_file_expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
         fs::write(&new_file_path, FILE_VERSIONS[0]).unwrap();
 
-        let snap = manager
-            .snapshot_from_dir(data_dir.path(), Some(snap))
-            .unwrap();
+        let snap = new_snap_object(manager, &data_dir.path(), Some(snap));
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -255,9 +364,7 @@ mod test {
         let removed_path = data_dir.path().to_path_buf().join(FILE_NAMES[2]);
         fs::remove_file(&removed_path).unwrap();
 
-        let snap = manager
-            .snapshot_from_dir(data_dir.path(), Some(snap))
-            .unwrap();
+        let snap = new_snap_object(manager, &data_dir.path(), Some(snap));
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -279,9 +386,7 @@ mod test {
         fs::remove_file(&directory_path).unwrap();
         fs::create_dir(&directory_path).unwrap();
 
-        let snap = manager
-            .snapshot_from_dir(data_dir.path(), Some(snap))
-            .unwrap();
+        let snap = new_snap_object(manager, &data_dir.path(), Some(snap));
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
