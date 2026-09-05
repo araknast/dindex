@@ -1,27 +1,20 @@
 #!/bin/sh
 
-dindex=$(realpath ./target/release/indexer)
+dindex=$(realpath ./target/release/snap)
 dir="$(realpath $1)"
 data="$(realpath $2)"
 if test -z $dir || test -z $data
 then
 	exit
 fi
-mkdir -p $data/bin
+prevdir=$PWD
 cd $dir
 git reset --hard origin/HEAD
 for commit in $(git log --format="%H" --reverse); do
 	git checkout "$commit"
 
-	for file in $(find $dir \( -type d \( -name ".git" -o -name "node_modules" \) -prune \) -o -type f -print)
-	do
-		if isutf8 -q $file; then
-			$dindex put "$file" "$data" >/dev/null
-		else
-			cp "$file" $data/bin
-		fi
-	done
+	$dindex $dir $data
+	
 	du -bsh $data
-	cd $dir
 done
-zstd -q --rm $data/bin/*
+cd $prevdir
