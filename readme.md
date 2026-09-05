@@ -9,8 +9,6 @@ a DIndex is named and its name is the same as the name as the file it versions
 ## commands
 `dindex put <file name> <data dir>` will store a file in a dindex and print out its version id
 
-`dindex put <file name> <data dir> <parent id>` will additionally set the files parent version
-
 `dindex get <file name> <data dir> <version id>` will get a fille at a particular version
 
 ## snap.sh

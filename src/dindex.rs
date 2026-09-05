@@ -121,6 +121,7 @@ impl std::error::Error for DeserializationError {}
 #[derive(Clone)]
 pub struct DIndex {
     name: String,
+    head: DIndexVersionId,
     version_map: HashMap<DIndexVersionId, DIndexVersion>,
     line_map: HashMap<String, usize>,
     lines: Vec<String>,
@@ -161,6 +162,7 @@ impl TryFrom<Vec<u8>> for DIndex {
         let mut iter = byte_array.into_iter();
 
         let name = take_name(&mut iter)?;
+        let head: DIndexVersionId = take_bytes(&mut iter)?.into();
         let map_size = take_u64(&mut iter)?;
 
         for _ in 0..map_size {
@@ -202,6 +204,7 @@ impl TryFrom<Vec<u8>> for DIndex {
         }
         Ok(DIndex {
             name,
+            head,
             version_map,
             line_map,
             lines,
@@ -216,6 +219,7 @@ impl From<DIndex> for Vec<u8> {
         let map_size = index.version_map.len() as u64;
         output.extend(index.name.as_bytes());
         output.push(b'\n');
+        output.extend(<[u8; _]>::from(index.head));
         output.extend(map_size.to_be_bytes());
 
         for (version_id, value) in index.version_map {
@@ -246,32 +250,37 @@ impl From<DIndex> for Vec<u8> {
 }
 
 impl DIndex {
-    pub fn new(name: &str) -> DIndex {
-        DIndex {
+    pub fn new(name: &str, data: &str) -> DIndex {
+        let mut index = DIndex {
             name: String::from(name),
+            head: DIndexVersionId([0; DIndexVersionId::LEN_BYTES]),
             version_map: HashMap::new(),
             line_map: HashMap::new(),
             lines: Vec::new(),
-        }
+        };
+        index.insert_version(data);
+        index
     }
 
+    pub fn head(&self) -> DIndexVersionId {
+        self.head
+    }
     pub fn name(&self) -> String {
         self.name.clone()
     }
     // Create a new version in the DIndex containing the data in version_data
     // Invariant: data with the same version_id will have the same data key for the same DIndex
-    pub fn insert_version(
-        &mut self,
-        version_data: &str,
-        parent: Option<DIndexVersionId>,
-    ) -> DIndexVersionId {
+    pub fn insert_version(&mut self, version_data: &str) -> DIndexVersionId {
         let version_id = DIndexVersionId::from_version_data(version_data);
-        if parent != Some(version_id) {
-            let parent = parent.unwrap_or(version_id);
-            let data_key = self.key_from_data(version_data);
-            self.version_map
-                .insert(version_id, DIndexVersion { parent, data_key });
-        }
+        let data_key = self.key_from_data(version_data);
+        self.version_map.insert(
+            version_id,
+            DIndexVersion {
+                parent: self.head,
+                data_key,
+            },
+        );
+        self.head = version_id;
         version_id
     }
 
@@ -332,11 +341,10 @@ mod test {
     #[test]
     fn test_serialize_deserialize() {
         let name = "New DIndex";
-        let mut index = DIndex::new(name);
-        let root_version_id = index.insert_version(FILE1, None);
+        let mut index = DIndex::new(name, FILE1);
+        let root_version_id = index.head;
 
-        let child_version_ids =
-            [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_version(f, Some(root_version_id)));
+        let child_version_ids = [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_version(f));
 
         let serialized: Vec<u8> = index.clone().into();
         let deserialized: DIndex = serialized.try_into().unwrap();
@@ -359,10 +367,22 @@ mod test {
         assert!(index.version_map.len() == 5);
         assert!(index.version_map.len() == deserialized.version_map.len());
         assert!(index.name == deserialized.name);
+        assert!(index.head == deserialized.head);
     }
+
+    #[test]
+    fn test_update_head() {
+        let mut index = DIndex::new("", FILE1);
+        let root_head = index.head;
+        let new_version_id = index.insert_version(FILE2);
+        let new_head = index.head;
+        assert!(root_head != new_head);
+        assert!(new_head == new_version_id)
+    }
+
     #[test]
     fn test_get_file() {
-        let mut index = DIndex::new("");
+        let mut index = DIndex::new("", FILE1);
         let files = [FILE1, FILE2, FILE3, FILE4, FILE5];
         for file in files {
             let key = index.key_from_data(file);
@@ -373,13 +393,13 @@ mod test {
 
     #[test]
     fn test_update_new_file() {
-        let mut index = DIndex::new("");
+        let mut index = DIndex::new("", FILE1);
         let key = index.key_from_data(FILE1);
         assert!(key.0.len() == 1);
     }
     #[test]
     fn test_update_subset_files() {
-        let mut index = DIndex::new("");
+        let mut index = DIndex::new("", FILE1);
         let key1 = index.key_from_data(FILE1);
         let key2 = index.key_from_data(FILE2);
         let key3 = index.key_from_data(FILE3);
@@ -390,7 +410,7 @@ mod test {
     }
     #[test]
     fn test_update_intersecting_files() {
-        let mut index = DIndex::new("");
+        let mut index = DIndex::new("", FILE1);
         let key1 = index.key_from_data(FILE1);
         let key2 = index.key_from_data(FILE4);
         assert!(key1.0.len() == 1);
@@ -399,7 +419,7 @@ mod test {
 
     #[test]
     fn test_update_disjoint_files() {
-        let mut index = DIndex::new("");
+        let mut index = DIndex::new("", FILE1);
         let key1 = index.key_from_data(FILE1);
         let key2 = index.key_from_data(FILE5);
         assert!(key1.0.len() == 1);

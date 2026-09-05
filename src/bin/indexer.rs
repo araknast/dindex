@@ -19,17 +19,7 @@ fn main() {
     match operation.as_str() {
         "put" => {
             let file_data: String = fs::read_to_string(file_path).unwrap();
-            let parent_id = if args.len() > 4 {
-                TryInto::<[u8; 32]>::try_into(hex::decode(&args[4]).unwrap())
-                    .unwrap()
-                    .into()
-            } else {
-                DIndexVersionId::from_version_data(&file_data)
-            };
-
-            let version_id = index
-                .insert(file_path, &file_data, Some(parent_id))
-                .unwrap();
+            let version_id = index.insert(file_path, &file_data).unwrap();
             let version_id_str = hex::encode(<[u8; 32]>::from(version_id));
             println!("{version_id_str}");
         }
@@ -43,7 +33,7 @@ fn main() {
                 std::process::exit(1)
             };
 
-            let file_data = index.get(file_path, version_id).unwrap().unwrap();
+            let file_data = index.get_version(file_path, version_id).unwrap().unwrap();
             println!("{file_data}");
         }
         _ => {

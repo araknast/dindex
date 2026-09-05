@@ -53,26 +53,27 @@ impl DIndexManager {
         Ok(())
     }
 
-    pub fn get(&self, name: &str, key: DIndexVersionId) -> Result<Option<String>, DIndexLoadError> {
+    pub fn get_version(
+        &self,
+        name: &str,
+        key: DIndexVersionId,
+    ) -> Result<Option<String>, DIndexLoadError> {
         let index = self.load_dindex(name)?;
         Ok(index.get_version_data(key))
     }
 
-    pub fn insert(
-        &self,
-        name: &str,
-        data: &str,
-        parent: Option<DIndexVersionId>,
-    ) -> Result<DIndexVersionId, DIndexLoadError> {
+    pub fn insert(&self, name: &str, data: &str) -> Result<DIndexVersionId, DIndexLoadError> {
         let result = self.load_dindex(name);
 
-        let mut index = if let Err(DIndexLoadError::Io(_)) = result {
-            DIndex::new(name)
+        let index = if let Ok(mut result) = result {
+            result.insert_version(data);
+            result
         } else {
-            result?
+            DIndex::new(name, data)
         };
 
-        let version_id = index.insert_version(data, parent);
+        let version_id = index.head();
+
         self.persist_dindex(index)?;
         Ok(version_id)
     }
@@ -82,7 +83,7 @@ impl DIndexManager {
 mod test {
     use assert_fs::fixture::PathChild;
 
-    use crate::{dindex::DIndexVersionId, index_manager::DIndexManager};
+    use crate::index_manager::DIndexManager;
 
     const FILE_NAME: &str = "file.txt";
 
@@ -103,9 +104,9 @@ mod test {
         let manager = DIndexManager::new(data_root);
         manager.create_data_root().unwrap();
 
-        let version_id = manager.insert(FILE_NAME, FILE_VERSIONS[0], None).unwrap();
+        let version_id = manager.insert(FILE_NAME, FILE_VERSIONS[0]).unwrap();
 
-        let version = manager.get(FILE_NAME, version_id).unwrap().unwrap();
+        let version = manager.get_version(FILE_NAME, version_id).unwrap().unwrap();
         assert_eq!(FILE_VERSIONS[0], version);
     }
 
@@ -119,22 +120,23 @@ mod test {
         manager.create_data_root().unwrap();
 
         // insert the root version
-        let mut parent_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
-        manager.insert(FILE_NAME, FILE_VERSIONS[0], None).unwrap();
+        manager.insert(FILE_NAME, FILE_VERSIONS[0]).unwrap();
 
         let mut version_ids = Vec::with_capacity(FILE_VERSIONS.len());
 
         // simulate file updates
         for version in FILE_VERSIONS {
-            let version_id = manager.insert(FILE_NAME, version, Some(parent_id)).unwrap();
+            let version_id = manager.insert(FILE_NAME, version).unwrap();
             version_ids.push(version_id);
-            let stored_data = manager.get(FILE_NAME, version_id).unwrap().unwrap();
+            let stored_data = manager.get_version(FILE_NAME, version_id).unwrap().unwrap();
             assert_eq!(version, stored_data);
-            parent_id = version_id;
         }
 
         for i in 0..FILE_VERSIONS.len() {
-            let stored_data = manager.get(FILE_NAME, version_ids[i]).unwrap().unwrap();
+            let stored_data = manager
+                .get_version(FILE_NAME, version_ids[i])
+                .unwrap()
+                .unwrap();
             assert_eq!(stored_data, FILE_VERSIONS[i])
         }
     }

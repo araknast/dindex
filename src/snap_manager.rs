@@ -158,7 +158,9 @@ impl SnapshotManager {
         &self,
         id: DIndexVersionId,
     ) -> Result<Option<Snapshot>, SnapshotLoadError> {
-        let snap_data = self.snap_index_manager.get(Self::SNAP_INDEX_NAME, id)?;
+        let snap_data = self
+            .snap_index_manager
+            .get_version(Self::SNAP_INDEX_NAME, id)?;
         if let Some(snap_data) = snap_data {
             Ok(Some(Snapshot::try_from(snap_data)?))
         } else {
@@ -167,10 +169,9 @@ impl SnapshotManager {
     }
 
     fn persist_snapshot(&self, snap: Snapshot) -> Result<DIndexVersionId, SnapshotPersistError> {
-        let parent_id = snap.parent_id;
         let snap_data: String = snap.into();
         self.snap_index_manager
-            .insert(Self::SNAP_INDEX_NAME, &snap_data, parent_id)
+            .insert(Self::SNAP_INDEX_NAME, &snap_data)
             .map_err(Into::into)
     }
 
@@ -187,7 +188,6 @@ impl SnapshotManager {
             let new_version_id = self.data_index_manager.insert(
                 &path.as_os_str().to_string_lossy(),
                 &fs::read_to_string(&path)?,
-                None,
             )?;
 
             if new_version_id != *version_id {
@@ -208,14 +208,6 @@ impl SnapshotManager {
     ) -> Result<DIndexVersionId, SnapshotCreationError> {
         let mut snap = Snapshot::new(parent_id);
 
-        let parent_snap: Option<Snapshot> = match parent_id {
-            Some(parent_id) => Some(
-                self.get_snapshot_by_id(parent_id)?
-                    .ok_or(SnapshotCreationError::ParentSnapDoesNotExist)?,
-            ),
-            None => None,
-        };
-
         fn process_dir(
             dir: impl AsRef<Path>,
             snap: &mut Snapshot,
@@ -229,7 +221,6 @@ impl SnapshotManager {
                     let version = index_manager.insert(
                         &path.as_os_str().to_string_lossy(),
                         &fs::read_to_string(&path)?,
-                        None, // TODO
                     )?;
                     snap.update_entry(&path, version);
                 }
