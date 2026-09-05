@@ -322,7 +322,6 @@ mod test {
     #[test]
     fn test_update_same_files() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = manager.snapshot_from_dir(data_dir.path()).unwrap();
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -340,7 +339,6 @@ mod test {
     #[test]
     fn test_update_new_files() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = manager.snapshot_from_dir(data_dir.path()).unwrap();
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -364,7 +362,6 @@ mod test {
     #[test]
     fn test_update_removed_files() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = manager.snapshot_from_dir(data_dir.path()).unwrap();
 
         let removed_path = data_dir.path().to_path_buf().join(FILE_NAMES[2]);
         fs::remove_file(&removed_path).unwrap();
@@ -385,7 +382,6 @@ mod test {
     #[test]
     fn test_update_file_now_directory() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = manager.snapshot_from_dir(data_dir.path()).unwrap();
 
         let directory_path = data_dir.path().to_path_buf().join(FILE_NAMES[2]);
         fs::remove_file(&directory_path).unwrap();
