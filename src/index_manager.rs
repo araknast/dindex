@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 pub use crate::dindex::DIndexVersionId;
-use crate::dindex::{DIndex, DeserializationError};
+use crate::dindex::{self, DIndex};
 use sha2::{Digest, Sha256};
 use std::{
     fmt::Debug,
@@ -19,7 +19,7 @@ pub enum DIndexLoadError {
     #[error("I/O Error loading DIndex")]
     Io(#[from] io::Error),
     #[error("Error deserializing DIndex")]
-    Deserialization(#[from] DeserializationError),
+    Deserialization(#[from] dindex::DeserializationError),
 }
 
 impl DIndexManager {
