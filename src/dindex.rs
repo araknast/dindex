@@ -35,7 +35,7 @@ pub struct DIndexVersionId([u8; DIndexVersionId::LEN_BYTES]);
 
 impl DIndexVersionId {
     const LEN_BYTES: usize = 32;
-    pub fn from_version_data(data: &str) -> DIndexVersionId {
+    pub fn from_version_data(data: impl AsRef<[u8]>) -> DIndexVersionId {
         DIndexVersionId(Sha256::digest(data).into())
     }
 
