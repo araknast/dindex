@@ -212,13 +212,14 @@ impl SnapshotManager {
                 if path.is_dir() {
                     process_dir(&path, snap, index_manager)?;
                 } else if !&snap.contains_path(&path) {
-                    let data = match fs::read_to_string(&path) {
-                        Ok(data) => data,
-                        Err(e) if e.kind() == io::ErrorKind::InvalidData => continue,
+                    let path_string = &path.as_os_str().to_string_lossy();
+                    let version = match fs::read_to_string(&path) {
+                        Ok(data) => index_manager.insert(path_string, &data)?,
+                        Err(e) if e.kind() == io::ErrorKind::InvalidData => {
+                            index_manager.insert_blob(path_string, fs::read(&path)?)?
+                        }
                         Err(e) => return Err(e.into()),
                     };
-                    let version =
-                        index_manager.insert(&path.as_os_str().to_string_lossy(), &data)?;
                     snap.update_entry(&path, version);
                 }
             }
