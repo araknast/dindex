@@ -11,7 +11,7 @@ use crate::{
     index_manager::{DIndexLoadError, DIndexManager},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Snapshot {
     entries: HashMap<PathBuf, DIndexVersionId>,
     parent_id: Option<DIndexVersionId>,
@@ -303,6 +303,38 @@ mod test {
         manager.get_snapshot_by_id(snap_id).unwrap().unwrap()
     }
 
+    #[test]
+    fn test_to_from_string() {
+        let (_tmp, data_dir, manager) = initialize_test_dir();
+        let snap = new_snap_object(manager, data_dir.path(), None);
+        let snap_string = String::from(snap.clone());
+        let snap_from_string = Snapshot::try_from(snap_string).unwrap();
+
+        for (path, _) in &snap.entries {
+            assert!(snap_from_string.contains_path(path));
+            assert!(snap_from_string.entries.get(path) == snap.entries.get(path));
+        }
+    }
+    #[test]
+    fn test_to_from_string_with_parent() {
+        let (_tmp, data_dir, manager) = initialize_test_dir();
+        let parent_id = manager.snapshot_from_dir(data_dir.path(), None).unwrap();
+
+        for i in 0..FILE_NAMES.len() {
+            let path = FILE_NAMES[i];
+            let full_path = data_dir.path().to_path_buf().join(path);
+            fs::write(full_path, FILE_VERSIONS[i + 1]).unwrap();
+        }
+
+        let snap = new_snap_object(manager, data_dir.path(), Some(parent_id));
+        let snap_string = String::from(snap.clone());
+        let snap_from_string = Snapshot::try_from(snap_string).unwrap();
+
+        for (path, _) in &snap.entries {
+            assert!(snap_from_string.contains_path(path));
+            assert!(snap_from_string.entries.get(path) == snap.entries.get(path));
+        }
+    }
     #[test]
     fn test_new_snapshot() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
