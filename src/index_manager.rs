@@ -53,6 +53,11 @@ impl DIndexManager {
         Ok(())
     }
 
+    pub fn get_head(&self, name: &str) -> Result<DIndexVersionId, DIndexLoadError> {
+        let index = self.load_dindex(name)?;
+        Ok(index.head())
+    }
+
     pub fn get_version(
         &self,
         name: &str,

@@ -150,8 +150,8 @@ impl SnapshotManager {
         Ok(())
     }
 
-    fn get_head(&self) -> Option<DIndexVersionId> {
-        None
+    fn get_head(&self) -> Result<DIndexVersionId, DIndexLoadError> {
+        self.snap_index_manager.get_head(Self::SNAP_INDEX_NAME)
     }
 
     fn get_snapshot_by_id(
