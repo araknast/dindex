@@ -72,10 +72,10 @@ impl DIndexManager {
     pub fn get_version(
         &self,
         name: &str,
-        key: DIndexVersionId,
+        version_id: DIndexVersionId,
     ) -> Result<Option<String>, DIndexLoadError> {
         let index = self.load_dindex(name)?;
-        Ok(index.get_version_data(key))
+        Ok(index.get_version_data(version_id))
     }
 
     pub fn insert(&self, name: &str, data: &str) -> Result<DIndexVersionId, DIndexLoadError> {
