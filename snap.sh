@@ -1,6 +1,6 @@
 #!/bin/sh
 
-dindex="./target/release/dindex"
+dindex="./target/release/indexer"
 dir="$1"
 data="$2"
 if test -z $dir || test -z $data
