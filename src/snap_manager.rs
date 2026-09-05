@@ -118,22 +118,17 @@ pub enum SnapshotCreationError {
     SnapshotPersist(#[from] SnapshotPersistError),
 }
 
-struct SnapshotManager {
-    snap_index_path: PathBuf,
-    head_snap_path: PathBuf,
+pub struct SnapshotManager {
     data_index_manager: DIndexManager,
     snap_index_manager: DIndexManager,
 }
 
 impl SnapshotManager {
     const SNAP_INDEX_NAME: &str = "__snap_index";
-    pub fn new(manager: DIndexManager) -> SnapshotManager {
+    pub fn new(data_root: impl AsRef<Path>) -> SnapshotManager {
+        let manager = DIndexManager::new(data_root);
         let snap_root = Path::new(&manager.data_root()).join("snaps");
-        let head_snap_path = snap_root.join("HEAD");
-        let snap_index_path = snap_root.join("index");
         SnapshotManager {
-            snap_index_path,
-            head_snap_path,
             data_index_manager: manager,
             snap_index_manager: DIndexManager::new(
                 &snap_root
@@ -245,7 +240,6 @@ mod test {
 
     use crate::{
         dindex::DIndexVersionId,
-        index_manager::DIndexManager,
         snap_manager::{Snapshot, SnapshotManager},
     };
     const FILE_NAMES: [&str; 3] = ["file1.txt", "file2.txt", "file3.txt"];
@@ -270,8 +264,7 @@ mod test {
             fs::write(file_path, FILE_VERSIONS[0]).unwrap();
         }
 
-        let index_manager = DIndexManager::new(index_dir);
-        let snapshot_manager = SnapshotManager::new(index_manager);
+        let snapshot_manager = SnapshotManager::new(index_dir);
         snapshot_manager.init_dirs().unwrap();
 
         (tmp, data_dir, snapshot_manager)

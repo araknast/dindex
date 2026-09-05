@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 
 use dindex::index_manager::{DIndexManager, DIndexVersionId};
+use dindex::snap_manager::SnapshotManager;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -10,9 +11,7 @@ fn main() {
         std::process::exit(1)
     }
     let data_root = &args[1];
-    let snap_store = format!("{}/{}", data_root, "snaps");
-    let head_snap = format!("{}/{}", snap_store, "HEAD");
 
-    let manager: SnapshotManager = SnapshotManager::new(data_root, snap_store, head_snap);
-    manager.new_snap();
+    let manager: SnapshotManager = SnapshotManager::new(data_root);
+    // manager.new_snap();
 }
