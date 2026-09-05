@@ -220,28 +220,23 @@ impl SnapshotManager {
             dir: impl AsRef<Path>,
             snap: &mut Snapshot,
             index_manager: &DIndexManager,
-            parent_snap: &Option<Snapshot>,
         ) -> Result<(), SnapshotCreationError> {
             for entry in fs::read_dir(dir)? {
                 let path = entry?.path();
                 if path.is_dir() {
-                    process_dir(&path, snap, index_manager, &parent_snap)?;
+                    process_dir(&path, snap, index_manager)?;
                 } else if !&snap.contains_path(&path) {
-                    let parent_version = parent_snap
-                        .as_ref()
-                        .and_then(|parent_snap| parent_snap.get_version_id(&path));
-
                     let version = index_manager.insert(
                         &path.as_os_str().to_string_lossy(),
                         &fs::read_to_string(&path)?,
-                        parent_version.copied(),
+                        None, // TODO
                     )?;
                     snap.update_entry(&path, version);
                 }
             }
             Ok(())
         }
-        process_dir(path, &mut snap, &self.data_index_manager, &parent_snap)?;
+        process_dir(path, &mut snap, &self.data_index_manager)?;
         self.persist_snapshot(snap).map_err(Into::into)
     }
 }
@@ -341,23 +336,6 @@ mod test {
             let full_path = data_dir.path().to_path_buf().join(path);
             assert!(snap.contains_path(&full_path));
             assert!(*snap.get_version_id(&full_path).unwrap() == v1_id);
-        }
-    }
-    fn test_parentage() {
-        let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = manager.snapshot_from_dir(data_dir.path(), None).unwrap();
-        for i in 0..FILE_NAMES.len() {
-            let path = FILE_NAMES[i];
-            let full_path = data_dir.path().to_path_buf().join(path);
-            fs::write(full_path, FILE_VERSIONS[i + 1]).unwrap();
-        }
-        let snap = new_snap_object(manager, &data_dir.path(), Some(snap));
-        for i in 0..FILE_NAMES.len() {
-            let path = FILE_NAMES[i];
-            let full_path = data_dir.path().to_path_buf().join(path);
-            let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[i + 1]);
-            assert!(snap.contains_path(&full_path));
-            assert!(*snap.get_version_id(&full_path).unwrap() == expected_id);
         }
     }
     #[test]
