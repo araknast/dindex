@@ -212,10 +212,13 @@ impl SnapshotManager {
                 if path.is_dir() {
                     process_dir(&path, snap, index_manager)?;
                 } else if !&snap.contains_path(&path) {
-                    let version = index_manager.insert(
-                        &path.as_os_str().to_string_lossy(),
-                        &fs::read_to_string(&path)?,
-                    )?;
+                    let data = match fs::read_to_string(&path) {
+                        Ok(data) => data,
+                        Err(e) if e.kind() == io::ErrorKind::InvalidData => continue,
+                        Err(e) => return Err(e.into()),
+                    };
+                    let version =
+                        index_manager.insert(&path.as_os_str().to_string_lossy(), &data)?;
                     snap.update_entry(&path, version);
                 }
             }
@@ -269,11 +272,7 @@ mod test {
         (tmp, data_dir, snapshot_manager)
     }
 
-    fn new_snap_object(
-        manager: SnapshotManager,
-        data_dir: &Path,
-        parent_id: Option<DIndexVersionId>,
-    ) -> Snapshot {
+    fn new_snap_object(manager: SnapshotManager, data_dir: &Path) -> Snapshot {
         let snap_id = manager.snapshot_from_dir(data_dir).unwrap();
         manager.get_snapshot_by_id(snap_id).unwrap().unwrap()
     }
@@ -281,7 +280,7 @@ mod test {
     #[test]
     fn test_to_from_string() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = new_snap_object(manager, data_dir.path(), None);
+        let snap = new_snap_object(manager, data_dir.path());
         let snap_string = String::from(snap.clone());
         let snap_from_string = Snapshot::try_from(snap_string).unwrap();
 
@@ -293,7 +292,6 @@ mod test {
     #[test]
     fn test_to_from_string_with_parent() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let parent_id = manager.snapshot_from_dir(data_dir.path()).unwrap();
 
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
@@ -301,7 +299,7 @@ mod test {
             fs::write(full_path, FILE_VERSIONS[i + 1]).unwrap();
         }
 
-        let snap = new_snap_object(manager, data_dir.path(), Some(parent_id));
+        let snap = new_snap_object(manager, data_dir.path());
         let snap_string = String::from(snap.clone());
         let snap_from_string = Snapshot::try_from(snap_string).unwrap();
 
@@ -313,7 +311,7 @@ mod test {
     #[test]
     fn test_new_snapshot() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = new_snap_object(manager, data_dir.path(), None);
+        let snap = new_snap_object(manager, data_dir.path());
         let v1_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
         for path in FILE_NAMES {
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -330,7 +328,7 @@ mod test {
             let full_path = data_dir.path().to_path_buf().join(path);
             fs::write(full_path, FILE_VERSIONS[i + 1]).unwrap();
         }
-        let snap = new_snap_object(manager, &data_dir.path(), Some(snap));
+        let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -352,7 +350,7 @@ mod test {
         let new_file_expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
         fs::write(&new_file_path, FILE_VERSIONS[0]).unwrap();
 
-        let snap = new_snap_object(manager, &data_dir.path(), Some(snap));
+        let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -371,7 +369,7 @@ mod test {
         let removed_path = data_dir.path().to_path_buf().join(FILE_NAMES[2]);
         fs::remove_file(&removed_path).unwrap();
 
-        let snap = new_snap_object(manager, &data_dir.path(), Some(snap));
+        let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -393,7 +391,7 @@ mod test {
         fs::remove_file(&directory_path).unwrap();
         fs::create_dir(&directory_path).unwrap();
 
-        let snap = new_snap_object(manager, &data_dir.path(), Some(snap));
+        let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
