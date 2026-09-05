@@ -196,11 +196,15 @@ impl SnapshotManager {
         self.persist_snapshot(snap).map_err(Into::into)
     }
     // Creates a snapshot from the contents of a directory
-    fn snapshot_from_dir(
+    pub fn snapshot_from_dir(
         &self,
         path: impl AsRef<Path>,
-        parent_id: Option<DIndexVersionId>,
     ) -> Result<DIndexVersionId, SnapshotCreationError> {
+        let parent_id = match self.get_head() {
+            Ok(id) => Some(id),
+            Err(DIndexLoadError::Nonexistent) => None,
+            Err(e) => return Err(e.into()),
+        };
         let mut snap = Snapshot::new(parent_id);
 
         fn process_dir(
@@ -275,7 +279,7 @@ mod test {
         data_dir: &Path,
         parent_id: Option<DIndexVersionId>,
     ) -> Snapshot {
-        let snap_id = manager.snapshot_from_dir(data_dir, parent_id).unwrap();
+        let snap_id = manager.snapshot_from_dir(data_dir).unwrap();
         manager.get_snapshot_by_id(snap_id).unwrap().unwrap()
     }
 
@@ -294,7 +298,7 @@ mod test {
     #[test]
     fn test_to_from_string_with_parent() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let parent_id = manager.snapshot_from_dir(data_dir.path(), None).unwrap();
+        let parent_id = manager.snapshot_from_dir(data_dir.path()).unwrap();
 
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
@@ -325,7 +329,7 @@ mod test {
     #[test]
     fn test_update_same_files() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = manager.snapshot_from_dir(data_dir.path(), None).unwrap();
+        let snap = manager.snapshot_from_dir(data_dir.path()).unwrap();
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -343,7 +347,7 @@ mod test {
     #[test]
     fn test_update_new_files() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = manager.snapshot_from_dir(data_dir.path(), None).unwrap();
+        let snap = manager.snapshot_from_dir(data_dir.path()).unwrap();
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
             let full_path = data_dir.path().to_path_buf().join(path);
@@ -367,7 +371,7 @@ mod test {
     #[test]
     fn test_update_removed_files() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = manager.snapshot_from_dir(data_dir.path(), None).unwrap();
+        let snap = manager.snapshot_from_dir(data_dir.path()).unwrap();
 
         let removed_path = data_dir.path().to_path_buf().join(FILE_NAMES[2]);
         fs::remove_file(&removed_path).unwrap();
@@ -388,7 +392,7 @@ mod test {
     #[test]
     fn test_update_file_now_directory() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
-        let snap = manager.snapshot_from_dir(data_dir.path(), None).unwrap();
+        let snap = manager.snapshot_from_dir(data_dir.path()).unwrap();
 
         let directory_path = data_dir.path().to_path_buf().join(FILE_NAMES[2]);
         fs::remove_file(&directory_path).unwrap();

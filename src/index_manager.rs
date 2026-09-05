@@ -20,6 +20,8 @@ pub enum DIndexLoadError {
     Io(#[from] io::Error),
     #[error("Error deserializing DIndex")]
     Deserialization(#[from] dindex::DeserializationError),
+    #[error("DIndex does not exist")]
+    Nonexistent,
 }
 
 impl DIndexManager {
@@ -39,7 +41,14 @@ impl DIndexManager {
 
     fn load_dindex(&self, name: &str) -> Result<DIndex, DIndexLoadError> {
         let path = Path::new(&self.data_root).join(hex::encode(Sha256::digest(name)));
-        let file = File::open(path)?;
+        let file = File::open(&path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                DIndexLoadError::Nonexistent
+            } else {
+                DIndexLoadError::Io(e)
+            }
+        })?;
+
         let mut data = Vec::new();
         zstd::stream::copy_decode(file, &mut data)?;
         DIndex::try_from(data).map_err(Into::into)
