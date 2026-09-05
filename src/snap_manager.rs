@@ -210,11 +210,11 @@ impl SnapshotManager {
             index_manager: &DIndexManager,
             ignored_paths: &Vec<impl AsRef<Path>>,
         ) -> Result<(), SnapshotCreationError> {
-            for entry in fs::read_dir(dir)? {
+            'a: for entry in fs::read_dir(dir)? {
                 let path = entry?.path();
                 for ignored_path in ignored_paths {
                     if ignored_path.as_ref().file_name() == path.file_name() {
-                        continue;
+                        continue 'a;
                     }
                 }
                 if path.is_dir() {
