@@ -50,6 +50,16 @@ impl AsRef<[u8]> for DIndexVersionId {
     }
 }
 
+impl TryFrom<Vec<u8>> for DIndexVersionId {
+    type Error = DeserializationError;
+    fn try_from(vec: Vec<u8>) -> Result<DIndexVersionId, DeserializationError> {
+        let bytes: [u8; DIndexVersionId::LEN_BYTES] = vec
+            .try_into()
+            .map_err(|_| DeserializationError(String::from("Could not deserialize version id")))?;
+        Ok(DIndexVersionId(bytes))
+    }
+}
+
 impl From<DIndexVersionId> for [u8; DIndexVersionId::LEN_BYTES] {
     fn from(id: DIndexVersionId) -> [u8; DIndexVersionId::LEN_BYTES] {
         id.0
