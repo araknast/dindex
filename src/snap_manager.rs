@@ -190,10 +190,12 @@ impl SnapshotManager {
         }
         self.persist_snapshot(snap).map_err(Into::into)
     }
-    // Creates a snapshot from the contents of a directory
+    // Creates a snapshot from the contents of a directory, probably not the
+    // final interface
     pub fn snapshot_from_dir(
         &self,
         path: impl AsRef<Path>,
+        ignored_paths: Vec<impl AsRef<Path>>,
     ) -> Result<DIndexVersionId, SnapshotCreationError> {
         let parent_id = match self.get_head() {
             Ok(id) => Some(id),
@@ -206,11 +208,17 @@ impl SnapshotManager {
             dir: impl AsRef<Path>,
             snap: &mut Snapshot,
             index_manager: &DIndexManager,
+            ignored_paths: &Vec<impl AsRef<Path>>,
         ) -> Result<(), SnapshotCreationError> {
             for entry in fs::read_dir(dir)? {
                 let path = entry?.path();
+                for ignored_path in ignored_paths {
+                    if ignored_path.as_ref().file_name() == path.file_name() {
+                        continue;
+                    }
+                }
                 if path.is_dir() {
-                    process_dir(&path, snap, index_manager)?;
+                    process_dir(&path, snap, index_manager, &ignored_paths)?;
                 } else if !&snap.contains_path(&path) {
                     let path_string = &path.as_os_str().to_string_lossy();
                     let version = match fs::read_to_string(&path) {
@@ -225,7 +233,7 @@ impl SnapshotManager {
             }
             Ok(())
         }
-        process_dir(path, &mut snap, &self.data_index_manager)?;
+        process_dir(path, &mut snap, &self.data_index_manager, &ignored_paths)?;
         self.persist_snapshot(snap).map_err(Into::into)
     }
 }
@@ -274,7 +282,9 @@ mod test {
     }
 
     fn new_snap_object(manager: SnapshotManager, data_dir: &Path) -> Snapshot {
-        let snap_id = manager.snapshot_from_dir(data_dir).unwrap();
+        let snap_id = manager
+            .snapshot_from_dir(data_dir, Vec::<String>::new())
+            .unwrap();
         manager.get_snapshot_by_id(snap_id).unwrap().unwrap()
     }
 
