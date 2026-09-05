@@ -12,6 +12,6 @@ fn main() {
     let data_root = &args[2];
 
     let manager: SnapshotManager = SnapshotManager::new(data_root);
-    let _ = manager.init_dirs();
-    let _ = manager.snapshot_from_dir(target_dir);
+    manager.init_dirs().unwrap();
+    manager.snapshot_from_dir(target_dir).unwrap();
 }
