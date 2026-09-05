@@ -44,6 +44,12 @@ impl DIndexVersionId {
     }
 }
 
+impl AsRef<[u8]> for DIndexVersionId {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 impl From<DIndexVersionId> for [u8; DIndexVersionId::LEN_BYTES] {
     fn from(id: DIndexVersionId) -> [u8; DIndexVersionId::LEN_BYTES] {
         id.0
