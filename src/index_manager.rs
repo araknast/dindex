@@ -2,7 +2,7 @@ use thiserror::Error;
 
 pub use crate::dindex::DIndexVersionId;
 use crate::dindex::{self, DIndex};
-use sha2::{Digest, Sha256};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE as base64};
 use std::{
     fmt::Debug,
     fs::{self, File},
@@ -40,7 +40,8 @@ impl DIndexManager {
     }
 
     fn load_dindex(&self, name: &str) -> Result<DIndex, DIndexLoadError> {
-        let path = Path::new(&self.data_root).join(hex::encode(Sha256::digest(name)));
+        let name_hash: String = base64.encode(name);
+        let path = Path::new(&self.data_root).join(name_hash);
         let file = File::open(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 DIndexLoadError::Nonexistent
@@ -53,8 +54,9 @@ impl DIndexManager {
         zstd::stream::copy_decode(file, &mut data)?;
         DIndex::try_from(data).map_err(Into::into)
     }
+
     fn persist_dindex(&self, index: DIndex) -> io::Result<()> {
-        let name_hash: String = hex::encode(Sha256::digest(index.name()));
+        let name_hash: String = base64.encode(index.name());
         let path = Path::new(&self.data_root).join(name_hash);
         let file = File::create(path)?;
         let data: &[u8] = &Vec::<u8>::from(index);
