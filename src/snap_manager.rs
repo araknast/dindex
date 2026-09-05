@@ -130,12 +130,7 @@ impl SnapshotManager {
         let snap_root = Path::new(&manager.data_root()).join("snaps");
         SnapshotManager {
             data_index_manager: manager,
-            snap_index_manager: DIndexManager::new(
-                &snap_root
-                    .into_os_string()
-                    .into_string()
-                    .expect("snap root path contains invalid unicode"),
-            ),
+            snap_index_manager: DIndexManager::new(snap_root),
         }
     }
 
