@@ -119,8 +119,8 @@ pub enum SnapshotCreationError {
 }
 
 struct SnapshotManager {
-    snap_index_path: String,
-    head_snap_path: String,
+    snap_index_path: PathBuf,
+    head_snap_path: PathBuf,
     data_index_manager: DIndexManager,
     snap_index_manager: DIndexManager,
 }
@@ -129,16 +129,8 @@ impl SnapshotManager {
     const SNAP_INDEX_NAME: &str = "__snap_index";
     pub fn new(manager: DIndexManager) -> SnapshotManager {
         let snap_root = Path::new(&manager.data_root()).join("snaps");
-        let head_snap_path = snap_root
-            .join("HEAD")
-            .into_os_string()
-            .into_string()
-            .expect("snap head path contains invalid unicode");
-        let snap_index_path = snap_root
-            .join("index")
-            .into_os_string()
-            .into_string()
-            .expect("snap index path contains invalid unicode");
+        let head_snap_path = snap_root.join("HEAD");
+        let snap_index_path = snap_root.join("index");
         SnapshotManager {
             snap_index_path,
             head_snap_path,
