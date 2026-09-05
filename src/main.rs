@@ -1,7 +1,5 @@
 use std::env;
-use std::fs;
 
-use dindex::index_manager::{DIndexManager, DIndexVersionId};
 use dindex::snap_manager::SnapshotManager;
 
 fn main() {
