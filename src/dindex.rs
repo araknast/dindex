@@ -289,9 +289,9 @@ impl DIndex {
         let version_id = DIndexVersionId::from_version_data(version_data);
         let data_key = self.key_from_data(version_data);
         self.version_map.entry(version_id).or_insert(DIndexVersion {
-                prev: self.head,
-                next: version_id,
-                data_key,
+            prev: self.head,
+            next: version_id,
+            data_key,
         });
 
         self.update_head(version_id);
@@ -392,6 +392,39 @@ mod test {
         assert!(index.version_map.len() == deserialized.version_map.len());
         assert!(index.name == deserialized.name);
         assert!(index.head == deserialized.head);
+    }
+
+    #[test]
+    fn test_prev_and_next() {
+        let mut index = DIndex::new("", FILE1);
+        let files = [FILE1, FILE2, FILE3];
+        for file in files {
+            index.insert_version(file);
+        }
+
+        let serialized: Vec<u8> = index.clone().into();
+        let index: DIndex = serialized.try_into().unwrap();
+
+        let curr = index.head();
+        assert!(index.get_version_data(curr).unwrap() == FILE3);
+        let prev_version = index.get_version(curr).unwrap().prev;
+        let next_version = index.get_version(curr).unwrap().next;
+        assert!(index.get_version_data(prev_version).unwrap() == FILE2);
+        assert!(index.get_version_data(next_version).unwrap() == FILE3);
+
+        let curr = prev_version;
+        assert!(index.get_version_data(curr).unwrap() == FILE2);
+        let prev_version = index.get_version(curr).unwrap().prev;
+        let next_version = index.get_version(curr).unwrap().next;
+        assert!(index.get_version_data(prev_version).unwrap() == FILE1);
+        assert!(index.get_version_data(next_version).unwrap() == FILE3);
+
+        let curr = prev_version;
+        assert!(index.get_version_data(curr).unwrap() == FILE1);
+        let prev_version = index.get_version(curr).unwrap().prev;
+        let next_version = index.get_version(curr).unwrap().next;
+        assert!(index.get_version_data(prev_version).unwrap() == FILE1);
+        assert!(index.get_version_data(next_version).unwrap() == FILE2);
     }
 
     #[test]
