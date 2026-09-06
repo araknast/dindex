@@ -74,7 +74,8 @@ impl From<[u8; DIndexVersionId::LEN_BYTES]> for DIndexVersionId {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct DIndexVersion {
-    parent: DIndexVersionId,
+    prev: DIndexVersionId,
+    next: DIndexVersionId,
     data_key: DIndexKey,
 }
 
@@ -167,7 +168,8 @@ impl TryFrom<Vec<u8>> for DIndex {
 
         for _ in 0..map_size {
             let version_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(&mut iter)?;
-            let parent_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(&mut iter)?;
+            let prev_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(&mut iter)?;
+            let next_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(&mut iter)?;
             let data_key_len = take_u64(&mut iter)?;
 
             let mut data_key_vec: Vec<DIndexRange> =
@@ -188,7 +190,8 @@ impl TryFrom<Vec<u8>> for DIndex {
             version_map.insert(
                 DIndexVersionId(version_id),
                 DIndexVersion {
-                    parent: DIndexVersionId(parent_id),
+                    prev: DIndexVersionId(prev_id),
+                    next: DIndexVersionId(next_id),
                     data_key,
                 },
             );
@@ -226,8 +229,11 @@ impl From<DIndex> for Vec<u8> {
             // id
             output.extend(version_id.into_bytes());
 
-            //parent id
-            output.extend(value.parent.into_bytes());
+            //prev id
+            output.extend(value.prev.into_bytes());
+
+            //next id
+            output.extend(value.next.into_bytes());
 
             // length of data key
             output.extend(
@@ -258,7 +264,16 @@ impl DIndex {
             line_map: HashMap::new(),
             lines: Vec::new(),
         };
-        index.insert_version(data);
+        index.head = DIndexVersionId::from_version_data(data);
+        let data_key = index.key_from_data(data);
+        index.version_map.insert(
+            index.head,
+            DIndexVersion {
+                prev: index.head,
+                next: index.head,
+                data_key,
+            },
+        );
         index
     }
 
@@ -276,12 +291,24 @@ impl DIndex {
         self.version_map.insert(
             version_id,
             DIndexVersion {
-                parent: self.head,
+                prev: self.head,
+                next: version_id,
                 data_key,
             },
         );
-        self.head = version_id;
+
+        self.update_head(version_id);
+
         version_id
+    }
+
+    fn update_head(&mut self, new_head: DIndexVersionId) {
+        let prev_head = self
+            .version_map
+            .get_mut(&self.head)
+            .expect("DIndex has no head!");
+        prev_head.next = new_head;
+        self.head = new_head;
     }
 
     pub fn get_version_data(&self, id: DIndexVersionId) -> Option<String> {
