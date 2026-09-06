@@ -288,8 +288,7 @@ impl DIndex {
     pub fn insert_version(&mut self, version_data: &str) -> DIndexVersionId {
         let version_id = DIndexVersionId::from_version_data(version_data);
         let data_key = self.key_from_data(version_data);
-        self.version_map.insert(
-            version_id,
+        self.version_map.entry(version_id).or_insert(
             DIndexVersion {
                 prev: self.head,
                 next: version_id,
