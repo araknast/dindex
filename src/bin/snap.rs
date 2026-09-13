@@ -11,7 +11,6 @@ fn main() {
     let target_dir = &args[1];
     let data_root = &args[2];
 
-    let manager: SnapshotManager = SnapshotManager::new(data_root);
-    manager.init_dirs().unwrap();
+    let manager: SnapshotManager = SnapshotManager::new(data_root).unwrap();
     manager.snapshot_from_dir(target_dir, vec![".git"]).unwrap();
 }

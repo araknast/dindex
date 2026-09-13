@@ -24,15 +24,20 @@ pub enum DIndexLoadError {
     Nonexistent,
 }
 
-impl DIndexManager {
-    pub fn new(data_root: impl AsRef<Path>) -> DIndexManager {
-        DIndexManager {
-            data_root: data_root.as_ref().to_path_buf(),
-        }
-    }
+#[derive(Debug, Error)]
+pub enum DIndexManagerInitializationError {
+    #[error("I/O Error initializing DIndex manager")]
+    Io(#[from] io::Error),
+}
 
-    pub fn create_data_root(&self) -> io::Result<()> {
-        fs::create_dir_all(&self.data_root)
+impl DIndexManager {
+    pub fn new(
+        data_root: impl AsRef<Path>,
+    ) -> Result<DIndexManager, DIndexManagerInitializationError> {
+        fs::create_dir_all(data_root.as_ref())?;
+        Ok(DIndexManager {
+            data_root: data_root.as_ref().to_path_buf(),
+        })
     }
 
     pub fn data_root(&self) -> &Path {
@@ -160,8 +165,7 @@ mod test {
         let dir = tmp.child("indexes");
         let data_root: &str = &dir.path().to_string_lossy();
 
-        let manager = DIndexManager::new(data_root);
-        manager.create_data_root().unwrap();
+        let manager = DIndexManager::new(data_root).unwrap();
 
         for version in BLOB_VERSIONS {
             let version_id = manager.insert_blob(FILE_NAME, version.to_vec()).unwrap();
@@ -182,8 +186,7 @@ mod test {
         let dir = tmp.child("indexes");
         let data_root: &str = &dir.path().to_string_lossy();
 
-        let manager = DIndexManager::new(data_root);
-        manager.create_data_root().unwrap();
+        let manager = DIndexManager::new(data_root).unwrap();
 
         let version_id = manager
             .insert_blob(FILE_NAME, BLOB_VERSIONS[0].to_vec())
@@ -203,8 +206,7 @@ mod test {
         let dir = tmp.child("indexes");
         let data_root: &str = &dir.path().to_string_lossy();
 
-        let manager = DIndexManager::new(data_root);
-        manager.create_data_root().unwrap();
+        let manager = DIndexManager::new(data_root).unwrap();
 
         let version_id = manager.insert(FILE_NAME, FILE_VERSIONS[0]).unwrap();
 
@@ -218,8 +220,7 @@ mod test {
         let dir = tmp.child("indexes");
         let data_root: &str = &dir.path().to_string_lossy();
 
-        let manager = DIndexManager::new(data_root);
-        manager.create_data_root().unwrap();
+        let manager = DIndexManager::new(data_root).unwrap();
 
         // insert the root version
         manager.insert(FILE_NAME, FILE_VERSIONS[0]).unwrap();

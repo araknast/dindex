@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::{
     dindex::{self, DIndexVersionId},
-    index_manager::{DIndexLoadError, DIndexManager},
+    index_manager::{DIndexLoadError, DIndexManager, DIndexManagerInitializationError},
 };
 
 #[derive(Debug, Clone)]
@@ -118,6 +118,11 @@ pub enum SnapshotCreationError {
     SnapshotPersist(#[from] SnapshotPersistError),
 }
 
+#[derive(Debug, Error)]
+pub enum SnapshotManagerInitializationError {
+    #[error("Could not initialize index manager")]
+    IndexManagerInit(#[from] DIndexManagerInitializationError),
+}
 pub struct SnapshotManager {
     data_index_manager: DIndexManager,
     snap_index_manager: DIndexManager,
@@ -125,19 +130,15 @@ pub struct SnapshotManager {
 
 impl SnapshotManager {
     const SNAP_INDEX_NAME: &str = "__snap_index";
-    pub fn new(data_root: impl AsRef<Path>) -> SnapshotManager {
-        let manager = DIndexManager::new(data_root);
+    pub fn new(
+        data_root: impl AsRef<Path>,
+    ) -> Result<SnapshotManager, SnapshotManagerInitializationError> {
+        let manager = DIndexManager::new(data_root)?;
         let snap_root = Path::new(&manager.data_root()).join("snaps");
-        SnapshotManager {
+        Ok(SnapshotManager {
             data_index_manager: manager,
-            snap_index_manager: DIndexManager::new(snap_root),
-        }
-    }
-
-    pub fn init_dirs(&self) -> io::Result<()> {
-        self.data_index_manager.create_data_root()?;
-        self.snap_index_manager.create_data_root()?;
-        Ok(())
+            snap_index_manager: DIndexManager::new(snap_root)?,
+        })
     }
 
     fn get_head(&self) -> Result<DIndexVersionId, DIndexLoadError> {
@@ -275,8 +276,7 @@ mod test {
             fs::write(file_path, FILE_VERSIONS[0]).unwrap();
         }
 
-        let snapshot_manager = SnapshotManager::new(index_dir);
-        snapshot_manager.init_dirs().unwrap();
+        let snapshot_manager = SnapshotManager::new(index_dir).unwrap();
 
         (tmp, data_dir, snapshot_manager)
     }
