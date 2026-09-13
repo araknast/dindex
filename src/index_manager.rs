@@ -1,7 +1,11 @@
 use thiserror::Error;
 
 pub use crate::dindex::DIndexVersionId;
-use crate::dindex::{self, DIndex};
+use crate::{
+    dindex::{self, DIndex},
+    dpack_manager::{DPackIndexParseError, DPackManager},
+};
+
 use base64::{Engine as _, engine::general_purpose::URL_SAFE as base64};
 use std::{
     fmt::Debug,
@@ -12,6 +16,7 @@ use std::{
 
 pub struct DIndexManager {
     data_root: PathBuf,
+    dpack_manager: DPackManager,
 }
 
 #[derive(Debug, Error)]
@@ -28,6 +33,8 @@ pub enum DIndexLoadError {
 pub enum DIndexManagerInitializationError {
     #[error("I/O Error initializing DIndex manager")]
     Io(#[from] io::Error),
+    #[error("Error reading DPack Index")]
+    DPackIndex(#[from] DPackIndexParseError),
 }
 
 impl DIndexManager {
@@ -37,6 +44,7 @@ impl DIndexManager {
         fs::create_dir_all(data_root.as_ref())?;
         Ok(DIndexManager {
             data_root: data_root.as_ref().to_path_buf(),
+            dpack_manager: DPackManager::new(data_root.as_ref())?,
         })
     }
 
@@ -45,6 +53,10 @@ impl DIndexManager {
     }
 
     fn load_dindex(&self, name: &str) -> Result<DIndex, DIndexLoadError> {
+        if let Ok(index) = self.dpack_manager.try_load(name) {
+            return Ok(index);
+        }
+
         let name_hash: String = base64.encode(name);
         let path = Path::new(&self.data_root).join(name_hash);
         let file = File::open(&path).map_err(|e| {
@@ -61,6 +73,9 @@ impl DIndexManager {
     }
 
     fn persist_dindex(&self, index: DIndex) -> io::Result<()> {
+        if let Ok(_) = self.dpack_manager.try_persist(&index) {
+            return Ok(());
+        }
         let name_hash: String = base64.encode(index.name());
         let path = Path::new(&self.data_root).join(name_hash);
         let file = File::create(path)?;
@@ -166,7 +181,6 @@ mod test {
         let data_root: &str = &dir.path().to_string_lossy();
 
         let manager = DIndexManager::new(data_root).unwrap();
-
         for version in BLOB_VERSIONS {
             let version_id = manager.insert_blob(FILE_NAME, version.to_vec()).unwrap();
 
