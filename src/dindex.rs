@@ -149,7 +149,7 @@ impl TryFrom<Vec<u8>> for DIndex {
         fn take_name(iter: &mut impl Iterator<Item = u8>) -> Result<String, DeserializationError> {
             let mut data = Vec::new();
             while let Some(byte) = iter.next() {
-                if byte == b'\n' {
+                if byte == b'\0' {
                     return Ok(String::from_utf8_lossy_owned(data));
                 } else {
                     data.push(byte)
@@ -221,7 +221,7 @@ impl From<DIndex> for Vec<u8> {
         let mut output: Vec<u8> = Vec::new();
         let map_size = index.version_map.len() as u64;
         output.extend(index.name.as_bytes());
-        output.push(b'\n');
+        output.push(b'\0');
         output.extend(<[u8; _]>::from(index.head));
         output.extend(map_size.to_be_bytes());
 
