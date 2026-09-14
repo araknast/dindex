@@ -128,6 +128,13 @@ pub struct DIndex {
     lines: Vec<String>,
 }
 
+impl TryFrom<Vec<u8>> for DIndex {
+    type Error = DeserializationError;
+    fn try_from(data: Vec<u8>) -> Result<Self, Self::Error> {
+        DIndex::from_byte_iter(&mut data.into_iter())
+    }
+}
+
 // Serializes the DIndex into bytes format
 impl From<DIndex> for Vec<u8> {
     fn from(index: DIndex) -> Vec<u8> {
@@ -364,7 +371,7 @@ mod test {
         let child_version_ids = [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_version(f));
 
         let serialized: Vec<u8> = index.clone().into();
-        let deserialized = DIndex::from_byte_iter(&mut serialized.into_iter()).unwrap();
+        let deserialized = DIndex::try_from(serialized).unwrap();
 
         let root_version = index.get_version(root_version_id).unwrap();
         let deserialized_root_version = deserialized.get_version(root_version_id).unwrap();
@@ -396,7 +403,7 @@ mod test {
         }
 
         let serialized: Vec<u8> = index.clone().into();
-        let index = DIndex::from_byte_iter(&mut serialized.into_iter()).unwrap();
+        let index = DIndex::try_from(serialized).unwrap();
 
         let curr = index.head();
         assert!(index.get_version_data(curr).unwrap() == FILE3);
