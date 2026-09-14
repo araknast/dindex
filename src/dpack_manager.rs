@@ -6,7 +6,7 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::{dindex::DIndex, index_manager::DIndexLoadError};
+use crate::{dindex::DIndex, index_manager};
 
 #[derive(Clone, PartialEq)]
 struct DPackIndex {
@@ -109,8 +109,8 @@ impl DPackManager {
         })
     }
 
-    pub fn try_load(&self, name: &str) -> Result<DIndex, DIndexLoadError> {
-        Err(DIndexLoadError::Nonexistent)
+    pub fn try_load(&self, name: &str) -> Result<DIndex, index_manager::LoadError> {
+        Err(index_manager::LoadError::Nonexistent)
     }
     pub fn try_persist(&self, index: &DIndex) -> io::Result<()> {
         Err(io::Error::new(io::ErrorKind::AlreadyExists, ""))

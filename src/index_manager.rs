@@ -20,7 +20,7 @@ pub struct DIndexManager {
 }
 
 #[derive(Debug, Error)]
-pub enum DIndexLoadError {
+pub enum LoadError {
     #[error("I/O Error loading DIndex")]
     Io(#[from] io::Error),
     #[error("Error deserializing DIndex")]
@@ -30,7 +30,7 @@ pub enum DIndexLoadError {
 }
 
 #[derive(Debug, Error)]
-pub enum DIndexManagerInitializationError {
+pub enum InitializationError {
     #[error("I/O Error initializing DIndex manager")]
     Io(#[from] io::Error),
     #[error("Error reading DPack Index")]
@@ -38,9 +38,7 @@ pub enum DIndexManagerInitializationError {
 }
 
 impl DIndexManager {
-    pub fn new(
-        data_root: impl AsRef<Path>,
-    ) -> Result<DIndexManager, DIndexManagerInitializationError> {
+    pub fn new(data_root: impl AsRef<Path>) -> Result<DIndexManager, InitializationError> {
         fs::create_dir_all(data_root.as_ref())?;
         Ok(DIndexManager {
             data_root: data_root.as_ref().to_path_buf(),
@@ -52,7 +50,7 @@ impl DIndexManager {
         self.data_root.as_path()
     }
 
-    fn load_dindex(&self, name: &str) -> Result<DIndex, DIndexLoadError> {
+    fn load_dindex(&self, name: &str) -> Result<DIndex, LoadError> {
         if let Ok(index) = self.dpack_manager.try_load(name) {
             return Ok(index);
         }
@@ -61,9 +59,9 @@ impl DIndexManager {
         let path = Path::new(&self.data_root).join(name_hash);
         let file = File::open(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                DIndexLoadError::Nonexistent
+                LoadError::Nonexistent
             } else {
-                DIndexLoadError::Io(e)
+                LoadError::Io(e)
             }
         })?;
 
@@ -84,7 +82,7 @@ impl DIndexManager {
         Ok(())
     }
 
-    pub fn get_head(&self, name: &str) -> Result<DIndexVersionId, DIndexLoadError> {
+    pub fn get_head(&self, name: &str) -> Result<DIndexVersionId, LoadError> {
         let index = self.load_dindex(name)?;
         Ok(index.head())
     }
@@ -93,7 +91,7 @@ impl DIndexManager {
         &self,
         name: &str,
         version_id: DIndexVersionId,
-    ) -> Result<Option<String>, DIndexLoadError> {
+    ) -> Result<Option<String>, LoadError> {
         let index = self.load_dindex(name)?;
         Ok(index.get_version_data(version_id))
     }
@@ -102,7 +100,7 @@ impl DIndexManager {
         &self,
         name: &str,
         version_id: DIndexVersionId,
-    ) -> Result<Vec<u8>, DIndexLoadError> {
+    ) -> Result<Vec<u8>, LoadError> {
         let name_hash: String = base64.encode(name);
         let version_id_string = hex::encode(version_id);
         let dirname = Path::new(&self.data_root).join("bin").join(&name_hash);
@@ -115,7 +113,7 @@ impl DIndexManager {
         Ok(data)
     }
 
-    pub fn insert(&self, name: &str, data: &str) -> Result<DIndexVersionId, DIndexLoadError> {
+    pub fn insert(&self, name: &str, data: &str) -> Result<DIndexVersionId, LoadError> {
         let result = self.load_dindex(name);
 
         let index = if let Ok(mut result) = result {

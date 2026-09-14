@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::{
     dindex::{self, DIndexVersionId},
-    index_manager::{DIndexLoadError, DIndexManager, DIndexManagerInitializationError},
+    index_manager::{self, DIndexManager},
 };
 
 #[derive(Debug, Clone)]
@@ -93,7 +93,7 @@ pub enum SnapshotReadError {
 #[derive(Debug, Error)]
 pub enum SnapshotPersistError {
     #[error("Could not load the snapshot DIndex")]
-    DIndexLoad(#[from] DIndexLoadError),
+    DIndexLoad(#[from] index_manager::LoadError),
 }
 
 #[derive(Debug, Error)]
@@ -101,7 +101,7 @@ pub enum SnapshotLoadError {
     #[error("Error reading snapshot data")]
     Read(#[from] SnapshotReadError),
     #[error("Could not load the snapshot DIndex")]
-    DIndexLoad(#[from] DIndexLoadError),
+    DIndexLoad(#[from] index_manager::LoadError),
 }
 
 #[derive(Debug, Error)]
@@ -109,7 +109,7 @@ pub enum SnapshotCreationError {
     #[error("I/O error attempting to create snapshot")]
     Io(#[from] io::Error),
     #[error("Could not load the file's DIndex")]
-    DIndexLoad(#[from] DIndexLoadError),
+    DIndexLoad(#[from] index_manager::LoadError),
     #[error("Could not load the parent snapshot")]
     ParentSnapLoad(#[from] SnapshotLoadError),
     #[error("Parent snapshot does not exist")]
@@ -121,7 +121,7 @@ pub enum SnapshotCreationError {
 #[derive(Debug, Error)]
 pub enum SnapshotManagerInitializationError {
     #[error("Could not initialize index manager")]
-    IndexManagerInit(#[from] DIndexManagerInitializationError),
+    IndexManagerInit(#[from] index_manager::InitializationError),
 }
 pub struct SnapshotManager {
     data_index_manager: DIndexManager,
@@ -141,7 +141,7 @@ impl SnapshotManager {
         })
     }
 
-    fn get_head(&self) -> Result<DIndexVersionId, DIndexLoadError> {
+    fn get_head(&self) -> Result<DIndexVersionId, index_manager::LoadError> {
         self.snap_index_manager.get_head(Self::SNAP_INDEX_NAME)
     }
 
@@ -200,7 +200,7 @@ impl SnapshotManager {
     ) -> Result<DIndexVersionId, SnapshotCreationError> {
         let parent_id = match self.get_head() {
             Ok(id) => Some(id),
-            Err(DIndexLoadError::Nonexistent) => None,
+            Err(index_manager::LoadError::Nonexistent) => None,
             Err(e) => return Err(e.into()),
         };
         let mut snap = Snapshot::new(parent_id);
