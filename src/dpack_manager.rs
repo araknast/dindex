@@ -90,6 +90,32 @@ impl From<DPackIndex> for Vec<u8> {
     }
 }
 
+struct DPack {
+    entries: Vec<DIndex>,
+}
+
+impl From<Vec<u8>> for DPack {
+    fn from(data: Vec<u8>) -> DPack {
+        let mut entries = Vec::new();
+        let mut iter = data.into_iter();
+        while let Ok(index) = DIndex::from_byte_iter(&mut iter) {
+            entries.push(index)
+        }
+
+        DPack { entries }
+    }
+}
+
+impl From<DPack> for Vec<u8> {
+    fn from(pack: DPack) -> Vec<u8> {
+        let mut data = Vec::new();
+        for entry in pack.entries {
+            data.append(&mut Vec::<u8>::from(entry));
+        }
+        data
+    }
+}
+
 pub struct DPackManager {
     index: DPackIndex,
 }
