@@ -69,7 +69,7 @@ impl DIndexManager {
 
         let mut data = Vec::new();
         zstd::stream::copy_decode(file, &mut data)?;
-        DIndex::try_from(data).map_err(Into::into)
+        DIndex::from_byte_iter(&mut data.into_iter()).map_err(Into::into)
     }
 
     fn persist_dindex(&self, index: DIndex) -> io::Result<()> {

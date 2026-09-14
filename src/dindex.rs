@@ -128,93 +128,6 @@ pub struct DIndex {
     lines: Vec<String>,
 }
 
-// Creates a DIndex from a byte array
-impl TryFrom<Vec<u8>> for DIndex {
-    type Error = DeserializationError;
-    fn try_from(byte_array: Vec<u8>) -> Result<Self, Self::Error> {
-        fn take_u64(iter: &mut impl Iterator<Item = u8>) -> Result<u64, DeserializationError> {
-            Ok(u64::from_be_bytes(take_bytes(iter)?))
-        }
-
-        fn take_bytes<const N: usize>(
-            iter: &mut impl Iterator<Item = u8>,
-        ) -> Result<[u8; N], DeserializationError> {
-            let mut arr: [u8; N] = [0; N];
-            for i in 0..N {
-                arr[i] = iter.next().ok_or("File ended early.")?;
-            }
-            Ok(arr)
-        }
-
-        fn take_name(iter: &mut impl Iterator<Item = u8>) -> Result<String, DeserializationError> {
-            let mut data = Vec::new();
-            while let Some(byte) = iter.next() {
-                if byte == b'\0' {
-                    return Ok(String::from_utf8_lossy_owned(data));
-                } else {
-                    data.push(byte)
-                }
-            }
-
-            Err("File ended early.".into())
-        }
-
-        let mut version_map = HashMap::new();
-        let mut iter = byte_array.into_iter();
-
-        let name = take_name(&mut iter)?;
-        let head: DIndexVersionId = take_bytes(&mut iter)?.into();
-        let map_size = take_u64(&mut iter)?;
-
-        for _ in 0..map_size {
-            let version_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(&mut iter)?;
-            let prev_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(&mut iter)?;
-            let next_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(&mut iter)?;
-            let data_key_len = take_u64(&mut iter)?;
-
-            let mut data_key_vec: Vec<DIndexRange> =
-                Vec::with_capacity(data_key_len.try_into().expect("capacity > usize"));
-
-            for _ in 0..data_key_len {
-                let range_start: usize = take_u64(&mut iter)?
-                    .try_into()
-                    .expect("range_start > usize");
-                let range_end: usize = take_u64(&mut iter)?
-                    .try_into()
-                    .expect("range_start > usize");
-                data_key_vec.push(DIndexRange((range_start, range_end)));
-            }
-
-            let data_key = DIndexKey(data_key_vec);
-
-            version_map.insert(
-                DIndexVersionId(version_id),
-                DIndexVersion {
-                    prev: DIndexVersionId(prev_id),
-                    next: DIndexVersionId(next_id),
-                    data_key,
-                },
-            );
-        }
-        let mut line_map = HashMap::new();
-        let mut lines = Vec::new();
-        let data = String::from_utf8_lossy_owned(iter.collect());
-        for line in data.split_inclusive("\n") {
-            if !line_map.contains_key(line) {
-                line_map.insert(line.to_string(), lines.len());
-                lines.push(line.to_string());
-            }
-        }
-        Ok(DIndex {
-            name,
-            head,
-            version_map,
-            line_map,
-            lines,
-        })
-    }
-}
-
 // Serializes the DIndex into bytes format
 impl From<DIndex> for Vec<u8> {
     fn from(index: DIndex) -> Vec<u8> {
@@ -275,6 +188,86 @@ impl DIndex {
             },
         );
         index
+    }
+
+    pub fn from_byte_iter(
+        iter: &mut impl Iterator<Item = u8>,
+    ) -> Result<DIndex, DeserializationError> {
+        fn take_u64(iter: &mut impl Iterator<Item = u8>) -> Result<u64, DeserializationError> {
+            Ok(u64::from_be_bytes(take_bytes(iter)?))
+        }
+
+        fn take_bytes<const N: usize>(
+            iter: &mut impl Iterator<Item = u8>,
+        ) -> Result<[u8; N], DeserializationError> {
+            let mut arr: [u8; N] = [0; N];
+            for i in 0..N {
+                arr[i] = *iter.next().as_ref().ok_or("File ended early.")?;
+            }
+            Ok(arr)
+        }
+
+        fn take_name(iter: &mut impl Iterator<Item = u8>) -> Result<String, DeserializationError> {
+            let mut data = Vec::new();
+            while let Some(byte) = iter.next() {
+                if byte == b'\0' {
+                    return Ok(String::from_utf8_lossy_owned(data));
+                } else {
+                    data.push(byte)
+                }
+            }
+
+            Err("File ended early.".into())
+        }
+
+        let mut version_map = HashMap::new();
+
+        let name = take_name(iter)?;
+        let head: DIndexVersionId = take_bytes(iter)?.into();
+        let map_size = take_u64(iter)?;
+
+        for _ in 0..map_size {
+            let version_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(iter)?;
+            let prev_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(iter)?;
+            let next_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(iter)?;
+            let data_key_len = take_u64(iter)?;
+
+            let mut data_key_vec: Vec<DIndexRange> =
+                Vec::with_capacity(data_key_len.try_into().expect("capacity > usize"));
+
+            for _ in 0..data_key_len {
+                let range_start: usize = take_u64(iter)?.try_into().expect("range_start > usize");
+                let range_end: usize = take_u64(iter)?.try_into().expect("range_start > usize");
+                data_key_vec.push(DIndexRange((range_start, range_end)));
+            }
+
+            let data_key = DIndexKey(data_key_vec);
+
+            version_map.insert(
+                DIndexVersionId(version_id),
+                DIndexVersion {
+                    prev: DIndexVersionId(prev_id),
+                    next: DIndexVersionId(next_id),
+                    data_key,
+                },
+            );
+        }
+        let mut line_map = HashMap::new();
+        let mut lines = Vec::new();
+        let data = String::from_utf8_lossy_owned(iter.collect());
+        for line in data.split_inclusive("\n") {
+            if !line_map.contains_key(line) {
+                line_map.insert(line.to_string(), lines.len());
+                lines.push(line.to_string());
+            }
+        }
+        Ok(DIndex {
+            name,
+            head,
+            version_map,
+            line_map,
+            lines,
+        })
     }
 
     pub fn head(&self) -> DIndexVersionId {
@@ -371,7 +364,7 @@ mod test {
         let child_version_ids = [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_version(f));
 
         let serialized: Vec<u8> = index.clone().into();
-        let deserialized: DIndex = serialized.try_into().unwrap();
+        let deserialized = DIndex::from_byte_iter(&mut serialized.into_iter()).unwrap();
 
         let root_version = index.get_version(root_version_id).unwrap();
         let deserialized_root_version = deserialized.get_version(root_version_id).unwrap();
@@ -403,7 +396,7 @@ mod test {
         }
 
         let serialized: Vec<u8> = index.clone().into();
-        let index: DIndex = serialized.try_into().unwrap();
+        let index = DIndex::from_byte_iter(&mut serialized.into_iter()).unwrap();
 
         let curr = index.head();
         assert!(index.get_version_data(curr).unwrap() == FILE3);
