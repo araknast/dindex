@@ -209,7 +209,7 @@ impl DIndex {
         ) -> Result<[u8; N], DeserializationError> {
             let mut arr: [u8; N] = [0; N];
             for i in 0..N {
-                arr[i] = *iter.next().as_ref().ok_or("File ended early.")?;
+                arr[i] = iter.next().ok_or("File ended early.")?;
             }
             Ok(arr)
         }
