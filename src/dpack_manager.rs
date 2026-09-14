@@ -8,10 +8,24 @@ use thiserror::Error;
 
 use crate::{dindex::DIndex, index_manager};
 
+#[derive(Copy, Clone, PartialEq)]
+struct DPackId(u64);
+
+impl From<u64> for DPackId {
+    fn from(i: u64) -> DPackId {
+        DPackId(i)
+    }
+}
+
+impl From<DPackId> for [u8; 8] {
+    fn from(id: DPackId) -> [u8; 8] {
+        id.0.to_be_bytes()
+    }
+}
 #[derive(Clone, PartialEq)]
 struct DPackIndex {
-    entries: HashMap<String, u64>,
-    head: u64,
+    entries: HashMap<String, DPackId>,
+    head: DPackId,
 }
 
 #[derive(Debug, Error)]
@@ -55,17 +69,17 @@ impl TryFrom<Vec<u8>> for DPackIndex {
         if data.len() == 0 {
             return Ok(DPackIndex {
                 entries: HashMap::new(),
-                head: 0,
+                head: DPackId(0),
             });
         }
 
         let mut entries = HashMap::new();
         let mut iter = data.into_iter();
-        let head = take_u64(&mut iter)?;
+        let head = DPackId(take_u64(&mut iter)?);
         let size = take_u64(&mut iter)?;
         for _ in 0..size {
             let name = take_name(&mut iter)?;
-            let pack_id = take_u64(&mut iter)?;
+            let pack_id = DPackId(take_u64(&mut iter)?);
             entries.insert(name, pack_id);
         }
         Ok(DPackIndex { entries, head })
@@ -75,7 +89,7 @@ impl TryFrom<Vec<u8>> for DPackIndex {
 impl From<DPackIndex> for Vec<u8> {
     fn from(index: DPackIndex) -> Vec<u8> {
         let mut output = Vec::new();
-        output.extend(index.head.to_be_bytes());
+        output.extend(<[u8; 8]>::from(index.head));
         output.extend(
             u64::try_from(index.entries.len())
                 .expect("usize > 64 ??")
@@ -84,7 +98,7 @@ impl From<DPackIndex> for Vec<u8> {
         for (name, pack_id) in index.entries {
             output.extend(name.into_bytes());
             output.push(b'\0');
-            output.extend(pack_id.to_be_bytes());
+            output.extend(<[u8; 8]>::from(pack_id));
         }
         output
     }
@@ -122,6 +136,7 @@ pub struct DPackManager {
 
 impl DPackManager {
     const INDEX_FILE_NAME: &str = "INDEX";
+    const MAX_DPACK_SIZE_BYTES: u32 = 4000;
     pub fn new(path: impl AsRef<Path>) -> Result<DPackManager, DPackIndexParseError> {
         let index_path = path.as_ref().join(Self::INDEX_FILE_NAME);
         let index_data = match fs::read(index_path) {
@@ -147,13 +162,13 @@ impl DPackManager {
 mod test {
     use std::collections::HashMap;
 
-    use crate::dpack_manager::DPackIndex;
+    use crate::dpack_manager::{DPackId, DPackIndex};
 
     #[test]
     fn test_serialize_deserialize_empty() {
         let index = DPackIndex {
             entries: HashMap::new(),
-            head: 0,
+            head: DPackId(0),
         };
 
         let serialized: Vec<u8> = index.clone().into();
@@ -166,18 +181,15 @@ mod test {
     fn test_serialize_deserialize() {
         let index = DPackIndex {
             entries: HashMap::from([
-                (String::from("file1"), 0),
-                (String::from("file2"), 1),
-                (String::from("file3"), 2),
+                (String::from("file1"), DPackId(0)),
+                (String::from("file2"), DPackId(1)),
+                (String::from("file3"), DPackId(2)),
             ]),
-            head: 2,
+            head: DPackId(2),
         };
         let serialized: Vec<u8> = index.clone().into();
         let deserialized: DPackIndex = serialized.try_into().unwrap();
 
         assert!(deserialized == index)
     }
-
-    #[test]
-    fn test_empty_index() {}
 }
