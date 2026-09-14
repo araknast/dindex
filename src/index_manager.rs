@@ -51,7 +51,7 @@ impl DIndexManager {
     }
 
     fn load_dindex(&self, name: &str) -> Result<DIndex, LoadError> {
-        if let Ok(index) = self.dpack_manager.try_load(name) {
+        if let Ok(Some(index)) = self.dpack_manager.try_load(name) {
             return Ok(index);
         }
 
@@ -70,10 +70,12 @@ impl DIndexManager {
         DIndex::try_from(data).map_err(Into::into)
     }
 
-    fn persist_dindex(&self, index: DIndex) -> io::Result<()> {
-        if let Ok(_) = self.dpack_manager.try_persist(&index) {
-            return Ok(());
-        }
+    fn persist_dindex(&mut self, index: DIndex) -> io::Result<()> {
+        let index = match self.dpack_manager.try_persist(index) {
+            Some(index) => index,
+            None => return Ok(()),
+        };
+
         let name_hash: String = base64.encode(index.name());
         let path = Path::new(&self.data_root).join(name_hash);
         let file = File::create(path)?;
@@ -113,7 +115,7 @@ impl DIndexManager {
         Ok(data)
     }
 
-    pub fn insert(&self, name: &str, data: &str) -> Result<DIndexVersionId, LoadError> {
+    pub fn insert(&mut self, name: &str, data: &str) -> Result<DIndexVersionId, LoadError> {
         let result = self.load_dindex(name);
 
         let index = if let Ok(mut result) = result {
@@ -218,7 +220,7 @@ mod test {
         let dir = tmp.child("indexes");
         let data_root: &str = &dir.path().to_string_lossy();
 
-        let manager = DIndexManager::new(data_root).unwrap();
+        let mut manager = DIndexManager::new(data_root).unwrap();
 
         let version_id = manager.insert(FILE_NAME, FILE_VERSIONS[0]).unwrap();
 
@@ -232,7 +234,7 @@ mod test {
         let dir = tmp.child("indexes");
         let data_root: &str = &dir.path().to_string_lossy();
 
-        let manager = DIndexManager::new(data_root).unwrap();
+        let mut manager = DIndexManager::new(data_root).unwrap();
 
         // insert the root version
         manager.insert(FILE_NAME, FILE_VERSIONS[0]).unwrap();

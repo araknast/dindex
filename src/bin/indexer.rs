@@ -13,7 +13,7 @@ fn main() {
     let file_path = &args[2];
     let data_root = &args[3];
 
-    let index: DIndexManager = DIndexManager::new(data_root).unwrap();
+    let mut index: DIndexManager = DIndexManager::new(data_root).unwrap();
 
     match operation.as_str() {
         "put" => {
