@@ -2,11 +2,11 @@ use std::{
     collections::HashMap,
     fs,
     io::{self, ErrorKind::NotFound},
-    path::Path,
+    path::{Path, PathBuf},
 };
 use thiserror::Error;
 
-use crate::{dindex::DIndex, index_manager};
+use crate::dindex::DIndex;
 
 #[derive(Copy, Clone, PartialEq)]
 struct DPackId(u64);
@@ -22,10 +22,29 @@ impl From<DPackId> for [u8; 8] {
         id.0.to_be_bytes()
     }
 }
+
+impl From<DPackId> for String {
+    fn from(id: DPackId) -> String {
+        id.0.to_string()
+    }
+}
+
 #[derive(Clone, PartialEq)]
 struct DPackIndex {
     entries: HashMap<String, DPackId>,
     head: DPackId,
+}
+
+impl DPackIndex {
+    fn get_pack_id(&self, name: &str) -> Option<DPackId> {
+        self.entries.get(name).copied()
+    }
+    fn insert(&mut self, name: &str, id: DPackId) {
+        self.entries.insert(name.to_string(), id);
+    }
+    fn increment_head(&mut self) {
+        self.head.0 += 1;
+    }
 }
 
 #[derive(Debug, Error)]
@@ -108,6 +127,21 @@ struct DPack {
     entries: Vec<DIndex>,
 }
 
+impl DPack {
+    fn new() -> DPack {
+        DPack {
+            entries: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, index: DIndex) {
+        self.entries.push(index);
+    }
+    fn pop(&mut self) -> Option<DIndex> {
+        self.entries.pop()
+    }
+}
+
 impl From<Vec<u8>> for DPack {
     fn from(data: Vec<u8>) -> DPack {
         let mut entries = Vec::new();
@@ -132,13 +166,14 @@ impl From<DPack> for Vec<u8> {
 
 pub struct DPackManager {
     index: DPackIndex,
+    pack_dir: PathBuf,
 }
-
 impl DPackManager {
-    const INDEX_FILE_NAME: &str = "INDEX";
+    const INDEX_FILE_NAME: &str = "index";
+    const PACK_DIR_NAME: &str = "packs";
     const MAX_DPACK_SIZE_BYTES: u32 = 4000;
-    pub fn new(path: impl AsRef<Path>) -> Result<DPackManager, DPackIndexParseError> {
-        let index_path = path.as_ref().join(Self::INDEX_FILE_NAME);
+    pub fn new(data_root: impl AsRef<Path>) -> Result<DPackManager, DPackIndexParseError> {
+        let index_path = data_root.as_ref().join(Self::INDEX_FILE_NAME);
         let index_data = match fs::read(index_path) {
             Ok(data) => data,
             Err(e) if e.kind() == NotFound => Vec::new(),
@@ -146,15 +181,67 @@ impl DPackManager {
         };
 
         Ok(DPackManager {
+            pack_dir: data_root.as_ref().join(Self::PACK_DIR_NAME),
             index: DPackIndex::try_from(index_data)?,
         })
     }
 
-    pub fn try_load(&self, name: &str) -> Result<DIndex, index_manager::LoadError> {
-        Err(index_manager::LoadError::Nonexistent)
+    fn new_head_pack(&mut self) -> DPack {
+        self.index.increment_head();
+        DPack::new()
     }
-    pub fn try_persist(&self, index: &DIndex) -> io::Result<()> {
-        Err(io::Error::new(io::ErrorKind::AlreadyExists, ""))
+
+    fn get_head_pack(&mut self) -> io::Result<DPack> {
+        let pack_path = self.pack_dir.join(String::from(self.index.head));
+        let data = fs::read(pack_path)?;
+        if data.len()
+            > Self::MAX_DPACK_SIZE_BYTES
+                .try_into()
+                .expect("usize < 32 ??")
+        {
+            Ok(self.new_head_pack())
+        } else {
+            Ok(DPack::from(data))
+        }
+    }
+
+    fn get_pack(&self, id: DPackId) -> io::Result<DPack> {
+        let pack_path = self.pack_dir.join(String::from(id));
+        Ok(fs::read(pack_path)?.into())
+    }
+
+    pub fn try_load(&self, name: &str) -> Result<Option<DIndex>, io::Error> {
+        let pack_id = match self.index.get_pack_id(name) {
+            Some(id) => id,
+            None => return Ok(None),
+        };
+
+        let pack = self.get_pack(pack_id)?;
+
+        for entry in pack.entries {
+            if entry.name() == name {
+                return Ok(Some(entry));
+            }
+        }
+        panic!("DIndex does not exist in its DPack!")
+    }
+    pub fn try_persist(&mut self, dindex: DIndex) -> Option<DIndex> {
+        let pack_path = self.pack_dir.join(String::from(self.index.head));
+        let mut head_pack = match self.get_head_pack() {
+            Ok(pack) => pack,
+            Err(_) => return Some(dindex),
+        };
+        self.index.insert(&dindex.name(), self.index.head);
+        head_pack.push(dindex);
+        let pack_data: Vec<u8> = head_pack.into();
+
+        match fs::write(pack_path, &pack_data) {
+            Ok(_) => None,
+            Err(_) => DPack::try_from(pack_data)
+                .expect("Could not reserialize DPack!")
+                .pop()
+                .or(None),
+        }
     }
 }
 
