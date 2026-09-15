@@ -119,7 +119,7 @@ impl From<&str> for DeserializationError {
 
 impl std::error::Error for DeserializationError {}
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DIndex {
     name: String,
     head: DIndexVersionId,
