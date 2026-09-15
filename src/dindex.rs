@@ -356,19 +356,20 @@ impl DIndex {
 mod test {
     use crate::dindex::DIndex;
 
-    const FILE1: &str = "lines\nof\nthe\nfile\n";
-    const FILE2: &str = "the\nfile\n";
-    const FILE3: &str = "the\nfile\nlines\nof\n";
-    const FILE4: &str = "some\nnew\nlines\nof\nimportance\nfor\nthe\nfile\nhere\n";
-    const FILE5: &str = "whole\ndifferent\ntext\n";
+    const VERSION1: &str = "lines\nof\nthe\nfile\n";
+    const VERSION2: &str = "the\nfile\n";
+    const VERSION3: &str = "the\nfile\nlines\nof\n";
+    const VERSION4: &str = "some\nnew\nlines\nof\nimportance\nfor\nthe\nfile\nhere\n";
+    const VERSION5: &str = "whole\ndifferent\ntext\n";
 
     #[test]
     fn test_serialize_deserialize() {
         let name = "New DIndex";
-        let mut index = DIndex::new(name, FILE1);
+        let mut index = DIndex::new(name, VERSION1);
         let root_version_id = index.head;
 
-        let child_version_ids = [FILE2, FILE3, FILE4, FILE5].map(|f| index.insert_version(f));
+        let child_version_ids =
+            [VERSION2, VERSION3, VERSION4, VERSION5].map(|f| index.insert_version(f));
 
         let serialized: Vec<u8> = index.clone().into();
         let deserialized = DIndex::try_from(serialized).unwrap();
@@ -396,8 +397,8 @@ mod test {
 
     #[test]
     fn test_prev_and_next() {
-        let mut index = DIndex::new("", FILE1);
-        let files = [FILE1, FILE2, FILE3];
+        let mut index = DIndex::new("", VERSION1);
+        let files = [VERSION1, VERSION2, VERSION3];
         for file in files {
             index.insert_version(file);
         }
@@ -406,32 +407,32 @@ mod test {
         let index = DIndex::try_from(serialized).unwrap();
 
         let curr = index.head();
-        assert!(index.get_version_data(curr).unwrap() == FILE3);
+        assert!(index.get_version_data(curr).unwrap() == VERSION3);
         let prev_version = index.get_version(curr).unwrap().prev;
         let next_version = index.get_version(curr).unwrap().next;
-        assert!(index.get_version_data(prev_version).unwrap() == FILE2);
-        assert!(index.get_version_data(next_version).unwrap() == FILE3);
+        assert!(index.get_version_data(prev_version).unwrap() == VERSION2);
+        assert!(index.get_version_data(next_version).unwrap() == VERSION3);
 
         let curr = prev_version;
-        assert!(index.get_version_data(curr).unwrap() == FILE2);
+        assert!(index.get_version_data(curr).unwrap() == VERSION2);
         let prev_version = index.get_version(curr).unwrap().prev;
         let next_version = index.get_version(curr).unwrap().next;
-        assert!(index.get_version_data(prev_version).unwrap() == FILE1);
-        assert!(index.get_version_data(next_version).unwrap() == FILE3);
+        assert!(index.get_version_data(prev_version).unwrap() == VERSION1);
+        assert!(index.get_version_data(next_version).unwrap() == VERSION3);
 
         let curr = prev_version;
-        assert!(index.get_version_data(curr).unwrap() == FILE1);
+        assert!(index.get_version_data(curr).unwrap() == VERSION1);
         let prev_version = index.get_version(curr).unwrap().prev;
         let next_version = index.get_version(curr).unwrap().next;
-        assert!(index.get_version_data(prev_version).unwrap() == FILE1);
-        assert!(index.get_version_data(next_version).unwrap() == FILE2);
+        assert!(index.get_version_data(prev_version).unwrap() == VERSION1);
+        assert!(index.get_version_data(next_version).unwrap() == VERSION2);
     }
 
     #[test]
     fn test_update_head() {
-        let mut index = DIndex::new("", FILE1);
+        let mut index = DIndex::new("", VERSION1);
         let root_head = index.head;
-        let new_version_id = index.insert_version(FILE2);
+        let new_version_id = index.insert_version(VERSION2);
         let new_head = index.head;
         assert!(root_head != new_head);
         assert!(new_head == new_version_id)
@@ -439,8 +440,8 @@ mod test {
 
     #[test]
     fn test_get_file() {
-        let mut index = DIndex::new("", FILE1);
-        let files = [FILE1, FILE2, FILE3, FILE4, FILE5];
+        let mut index = DIndex::new("", VERSION1);
+        let files = [VERSION1, VERSION2, VERSION3, VERSION4, VERSION5];
         for file in files {
             let key = index.key_from_data(file);
             let data = index.data_from_key(&key);
@@ -450,16 +451,16 @@ mod test {
 
     #[test]
     fn test_update_new_file() {
-        let mut index = DIndex::new("", FILE1);
-        let key = index.key_from_data(FILE1);
+        let mut index = DIndex::new("", VERSION1);
+        let key = index.key_from_data(VERSION1);
         assert!(key.0.len() == 1);
     }
     #[test]
     fn test_update_subset_files() {
-        let mut index = DIndex::new("", FILE1);
-        let key1 = index.key_from_data(FILE1);
-        let key2 = index.key_from_data(FILE2);
-        let key3 = index.key_from_data(FILE3);
+        let mut index = DIndex::new("", VERSION1);
+        let key1 = index.key_from_data(VERSION1);
+        let key2 = index.key_from_data(VERSION2);
+        let key3 = index.key_from_data(VERSION3);
 
         assert!(key1.0.len() == 1);
         assert!(key2.0.len() == 2);
@@ -467,18 +468,18 @@ mod test {
     }
     #[test]
     fn test_update_intersecting_files() {
-        let mut index = DIndex::new("", FILE1);
-        let key1 = index.key_from_data(FILE1);
-        let key2 = index.key_from_data(FILE4);
+        let mut index = DIndex::new("", VERSION1);
+        let key1 = index.key_from_data(VERSION1);
+        let key2 = index.key_from_data(VERSION4);
         assert!(key1.0.len() == 1);
         assert!(key2.0.len() == 6);
     }
 
     #[test]
     fn test_update_disjoint_files() {
-        let mut index = DIndex::new("", FILE1);
-        let key1 = index.key_from_data(FILE1);
-        let key2 = index.key_from_data(FILE5);
+        let mut index = DIndex::new("", VERSION1);
+        let key1 = index.key_from_data(VERSION1);
+        let key2 = index.key_from_data(VERSION5);
         assert!(key1.0.len() == 1);
         assert!(key2.0.len() == 2);
     }
