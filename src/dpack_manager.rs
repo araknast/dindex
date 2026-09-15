@@ -252,7 +252,7 @@ mod test {
     use crate::dpack_manager::{DPackId, DPackIndex};
 
     #[test]
-    fn test_serialize_deserialize_empty() {
+    fn test_serialize_deserialize_index_empty() {
         let index = DPackIndex {
             entries: HashMap::new(),
             head: DPackId(0),
@@ -265,7 +265,7 @@ mod test {
     }
 
     #[test]
-    fn test_serialize_deserialize() {
+    fn test_serialize_deserialize_index() {
         let index = DPackIndex {
             entries: HashMap::from([
                 (String::from("file1"), DPackId(0)),
