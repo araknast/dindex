@@ -119,7 +119,7 @@ impl From<&str> for DeserializationError {
 
 impl std::error::Error for DeserializationError {}
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct DIndex {
     name: String,
     head: DIndexVersionId,
@@ -393,6 +393,7 @@ mod test {
         assert!(index.version_map.len() == deserialized.version_map.len());
         assert!(index.name == deserialized.name);
         assert!(index.head == deserialized.head);
+        assert!(index == deserialized);
     }
 
     #[test]
