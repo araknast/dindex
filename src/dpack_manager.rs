@@ -6,19 +6,19 @@ mod errors;
 use dpack::DPack;
 use dpack_id::DPackId;
 use dpack_index::DPackIndex;
-pub use errors::{DPackIndexParseError, DPackPersistError};
+pub use errors::{DPackIndexParseError, DPackLoadError, DPackPersistError};
 
 use std::{
     fs::{self, File},
-    io::{self, ErrorKind::NotFound},
+    io,
     path::{Path, PathBuf},
 };
 
 use crate::dindex::DIndex;
 
 pub struct DPackManager {
-    index: DPackIndex,
     pack_dir: PathBuf,
+    index_path: PathBuf,
 }
 impl DPackManager {
     const INDEX_FILE_NAME: &str = "index";
@@ -29,33 +29,31 @@ impl DPackManager {
         fs::create_dir_all(&pack_dir)?;
 
         let index_path = data_root.as_ref().join(Self::INDEX_FILE_NAME);
-        let index = match fs::read(index_path) {
-            Ok(data) => DPackIndex::try_from(data)?,
-            Err(e) if e.kind() == NotFound => {
+        match fs::exists(&index_path) {
+            Ok(true) => (),
+            _ => {
                 let head_path = pack_dir.join(String::from(DPackId::default()));
                 File::create(head_path)?;
-                DPackIndex::default()
+                fs::write(&index_path, Vec::<u8>::from(DPackIndex::default()))?;
             }
-            Err(e) => return Err(e.into()),
         };
 
-        Ok(DPackManager { pack_dir, index })
+        Ok(DPackManager {
+            pack_dir,
+            index_path,
+        })
     }
 
-    fn new_head_pack(&mut self) -> DPack {
-        self.index.increment_head();
-        DPack::new()
-    }
-
-    fn get_head_pack(&mut self) -> io::Result<DPack> {
-        let pack_path = self.pack_dir.join(String::from(self.index.head()));
+    fn get_head_pack(&mut self, index: &mut DPackIndex) -> io::Result<DPack> {
+        let pack_path = self.pack_dir.join(String::from(index.head()));
         let data = fs::read(pack_path)?;
         if data.len()
             > Self::MAX_DPACK_SIZE_BYTES
                 .try_into()
                 .expect("usize < 32 ??")
         {
-            Ok(self.new_head_pack())
+            index.increment_head();
+            Ok(DPack::new())
         } else {
             Ok(DPack::from(data))
         }
@@ -66,8 +64,17 @@ impl DPackManager {
         Ok(fs::read(pack_path)?.into())
     }
 
-    pub fn try_load(&self, name: &str) -> Result<Option<DIndex>, io::Error> {
-        let pack_id = match self.index.get_pack_id(name) {
+    fn load_index(&self) -> Result<DPackIndex, DPackIndexParseError> {
+        fs::read(&self.index_path)?.try_into()
+    }
+
+    fn persist_index(&self, index: DPackIndex) -> io::Result<()> {
+        fs::write(&self.index_path, Vec::<u8>::from(index))
+    }
+
+    pub fn try_load(&self, name: &str) -> Result<Option<DIndex>, DPackLoadError> {
+        let index = self.load_index()?;
+        let pack_id = match index.get_pack_id(name) {
             Some(id) => id,
             None => return Ok(None),
         };
@@ -80,39 +87,24 @@ impl DPackManager {
         ))
     }
 
-    // Returns the passed DIndex on failure, else None
     pub fn try_persist(&mut self, dindex: DIndex) -> Result<(), DPackPersistError> {
-        let pack_path = self.pack_dir.join(String::from(self.index.head()));
-        let mut head_pack = match self.get_head_pack() {
+        let mut index = self.load_index()?;
+        let mut head_pack = match self.get_head_pack(&mut index) {
             Ok(pack) => pack,
             Err(e) => {
-                return Err(DPackPersistError {
-                    index: dindex,
-                    source: e,
-                });
+                return Err(e.into());
             }
         };
+        let pack_path = self.pack_dir.join(String::from(index.head()));
+
         let index_name = dindex.name();
-        self.index.insert(&index_name, self.index.head());
+        index.insert(&index_name, index.head());
         head_pack.insert(dindex);
         let pack_data: Vec<u8> = head_pack.into();
 
-        // Write the DPack data. If the write fails we will need to get the
-        // DIndex back and return it to the caller
-        match fs::write(pack_path, &pack_data) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                let dindex = DPack::try_from(pack_data)
-                    .expect("Could not reserialize DPack!")
-                    .into_entry(&index_name)
-                    .expect("DIndex no longer exists in reserialized pack!");
-
-                Err(DPackPersistError {
-                    index: dindex,
-                    source: e,
-                })
-            }
-        }
+        fs::write(pack_path, &pack_data)?;
+        self.persist_index(index)?;
+        Ok(())
     }
 }
 
@@ -125,7 +117,7 @@ mod test {
         dpack_manager::{DPack, DPackId, DPackIndex, DPackManager},
     };
 
-    const VERSION1: &str = "lines\nof\nthe\nfile\n";
+    const VERSION1: &str = "lines\nof\nthe\nfile";
     const VERSION2: &str = "the\nfile\n";
     const VERSION3: &str = "the\nfile\nlines\nof\n";
     const VERSION4: &str = "some\nnew\nlines\nof\nimportance\nfor\nthe\nfile\nhere\n";

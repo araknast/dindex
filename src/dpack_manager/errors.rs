@@ -1,13 +1,19 @@
-use std::io;
-
-use crate::dindex::DIndex;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-#[error("Failed to persist DPack: {source}")]
-pub struct DPackPersistError {
-    pub index: DIndex,
-    pub source: io::Error,
+pub enum DPackPersistError {
+    #[error("I/O Error persisting DPack")]
+    Io(#[from] std::io::Error),
+    #[error("Could not persist DPack: could not load index")]
+    IndexParse(#[from] DPackIndexParseError),
+}
+
+#[derive(Debug, Error)]
+pub enum DPackLoadError {
+    #[error("I/O Error loading DPack")]
+    Io(#[from] std::io::Error),
+    #[error("Could not load DPack: could not load index")]
+    IndexParse(#[from] DPackIndexParseError),
 }
 
 #[derive(Debug, Error)]
