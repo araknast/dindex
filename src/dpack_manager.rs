@@ -6,7 +6,7 @@ mod errors;
 use dpack::DPack;
 use dpack_id::DPackId;
 use dpack_index::DPackIndex;
-pub use errors::{DPackIndexParseError, DPackLoadError, DPackPersistError};
+pub use errors::{DPackIndexLoadError, DPackLoadError, DPackPersistError};
 
 use std::{
     fs::{self, File},
@@ -24,7 +24,7 @@ impl DPackManager {
     const INDEX_FILE_NAME: &str = "index";
     const PACK_DIR_NAME: &str = "packs";
     const MAX_DPACK_SIZE_BYTES: u32 = 4000;
-    pub fn new(data_root: impl AsRef<Path>) -> Result<DPackManager, DPackIndexParseError> {
+    pub fn new(data_root: impl AsRef<Path>) -> Result<DPackManager, DPackIndexLoadError> {
         let pack_dir = data_root.as_ref().join(Self::PACK_DIR_NAME);
         fs::create_dir_all(&pack_dir)?;
 
@@ -64,7 +64,7 @@ impl DPackManager {
         Ok(fs::read(pack_path)?.into())
     }
 
-    fn load_index(&self) -> Result<DPackIndex, DPackIndexParseError> {
+    fn load_index(&self) -> Result<DPackIndex, DPackIndexLoadError> {
         fs::read(&self.index_path)?.try_into()
     }
 

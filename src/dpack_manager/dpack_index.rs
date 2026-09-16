@@ -1,5 +1,5 @@
 use super::dpack_id::DPackId;
-use super::errors::DPackIndexParseError;
+use super::errors::DPackIndexLoadError;
 use std::collections::HashMap;
 
 #[derive(Clone, PartialEq)]
@@ -33,23 +33,23 @@ impl DPackIndex {
 }
 
 impl TryFrom<Vec<u8>> for DPackIndex {
-    type Error = DPackIndexParseError;
+    type Error = DPackIndexLoadError;
     fn try_from(data: Vec<u8>) -> Result<DPackIndex, Self::Error> {
-        fn take_u64(iter: &mut impl Iterator<Item = u8>) -> Result<u64, DPackIndexParseError> {
+        fn take_u64(iter: &mut impl Iterator<Item = u8>) -> Result<u64, DPackIndexLoadError> {
             Ok(u64::from_be_bytes(take_bytes(iter)?))
         }
 
         fn take_bytes<const N: usize>(
             iter: &mut impl Iterator<Item = u8>,
-        ) -> Result<[u8; N], DPackIndexParseError> {
+        ) -> Result<[u8; N], DPackIndexLoadError> {
             let mut arr: [u8; N] = [0; N];
             for i in 0..N {
-                arr[i] = iter.next().ok_or(DPackIndexParseError::EarlyTermination)?;
+                arr[i] = iter.next().ok_or(DPackIndexLoadError::EarlyTermination)?;
             }
             Ok(arr)
         }
 
-        fn take_name(iter: &mut impl Iterator<Item = u8>) -> Result<String, DPackIndexParseError> {
+        fn take_name(iter: &mut impl Iterator<Item = u8>) -> Result<String, DPackIndexLoadError> {
             let mut data = Vec::new();
             while let Some(byte) = iter.next() {
                 if byte == b'\0' {
@@ -59,7 +59,7 @@ impl TryFrom<Vec<u8>> for DPackIndex {
                 }
             }
 
-            Err(DPackIndexParseError::EarlyTermination)
+            Err(DPackIndexLoadError::EarlyTermination)
         }
 
         if data.len() == 0 {
