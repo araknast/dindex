@@ -16,24 +16,39 @@ use std::{
 
 use crate::dindex::DIndex;
 
+pub struct DPackManagerConfig {
+    index_file_name: String,
+    pack_dir_name: String,
+    max_dpack_size_bytes: u32,
+    zstd_compression_level: i32,
+}
+
 pub struct DPackManager {
     pack_dir: PathBuf,
     index_path: PathBuf,
+    config: DPackManagerConfig,
 }
+
 impl DPackManager {
-    const INDEX_FILE_NAME: &str = "index";
-    const PACK_DIR_NAME: &str = "packs";
-    const MAX_DPACK_SIZE_BYTES: u32 = 4000;
     pub fn new(data_root: impl AsRef<Path>) -> Result<DPackManager, DPackIndexLoadError> {
-        let pack_dir = data_root.as_ref().join(Self::PACK_DIR_NAME);
+        let config = DPackManagerConfig {
+            index_file_name: String::from("index"),
+            pack_dir_name: String::from("pack"),
+            max_dpack_size_bytes: 4000,
+            zstd_compression_level: 3,
+        };
+
+        let pack_dir = data_root.as_ref().join(&config.pack_dir_name);
         fs::create_dir_all(&pack_dir)?;
 
-        let index_path = data_root.as_ref().join(Self::INDEX_FILE_NAME);
+        let index_path = data_root.as_ref().join(&config.index_file_name);
         match fs::exists(&index_path) {
             Ok(true) => (),
             _ => {
                 let head_path = pack_dir.join(String::from(DPackId::default()));
-                File::create(head_path)?;
+                let head_file = File::create(&head_path)?;
+                let head_data: &[u8] = &[];
+                zstd::stream::copy_encode(head_data, head_file, config.zstd_compression_level)?;
                 fs::write(&index_path, Vec::<u8>::from(DPackIndex::default()))?;
             }
         };
@@ -41,6 +56,7 @@ impl DPackManager {
         Ok(DPackManager {
             pack_dir,
             index_path,
+            config,
         })
     }
 
@@ -48,25 +64,31 @@ impl DPackManager {
         let pack_path = self.pack_dir.join(String::from(index.head()));
         let data = fs::read(pack_path)?;
         if data.len()
-            > Self::MAX_DPACK_SIZE_BYTES
+            > self
+                .config
+                .max_dpack_size_bytes
                 .try_into()
                 .expect("usize < 32 ??")
         {
             index.increment_head();
-            Ok(DPack::new())
-        } else {
-            Ok(DPack::from(data))
         }
+        self.load_pack(index.head())
     }
 
     fn load_pack(&self, id: DPackId) -> io::Result<DPack> {
         let pack_path = self.pack_dir.join(String::from(id));
-        Ok(fs::read(pack_path)?.into())
+        let pack_file = File::open(pack_path)?;
+        let mut pack_data = Vec::new();
+        zstd::stream::copy_decode(pack_file, &mut pack_data)?;
+        Ok(DPack::from(pack_data))
     }
 
     fn persist_pack(&self, pack: DPack, id: DPackId) -> io::Result<()> {
-        let path = self.pack_dir.join(String::from(id));
-        fs::write(path, Vec::<u8>::from(pack))
+        let pack_path = self.pack_dir.join(String::from(id));
+        let pack_data: &[u8] = &Vec::<u8>::from(pack);
+        let pack_file = File::create(pack_path)?;
+        zstd::stream::copy_encode(pack_data, pack_file, self.config.zstd_compression_level)?;
+        Ok(())
     }
 
     fn load_index(&self) -> Result<DPackIndex, DPackIndexLoadError> {
