@@ -168,6 +168,13 @@ impl From<DIndex> for Vec<u8> {
             }
         }
 
+        // number of index lines
+        output.extend(
+            u64::try_from(index.lines.len())
+                .expect("usize > 64 ??")
+                .to_be_bytes(),
+        );
+
         // index lines
         output.extend(index.lines.into_iter().map(String::into_bytes).flatten());
 
@@ -212,6 +219,18 @@ impl DIndex {
                 arr[i] = iter.next().ok_or("File ended early.")?;
             }
             Ok(arr)
+        }
+
+        fn take_line(iter: &mut impl Iterator<Item = u8>) -> Result<String, DeserializationError> {
+            let mut data = Vec::new();
+            while let Some(byte) = iter.next() {
+                data.push(byte);
+                if byte == b'\n' {
+                    return Ok(String::from_utf8_lossy_owned(data));
+                }
+            }
+
+            Err("File ended early.".into())
         }
 
         fn take_name(iter: &mut impl Iterator<Item = u8>) -> Result<String, DeserializationError> {
@@ -259,11 +278,13 @@ impl DIndex {
                 },
             );
         }
+        let num_lines: usize = take_u64(iter)?.try_into().expect("num lines > usize !");
         let mut line_map = HashMap::new();
-        let mut lines = Vec::new();
-        let data = String::from_utf8_lossy_owned(iter.collect());
-        for line in data.split_inclusive("\n") {
-            if !line_map.contains_key(line) {
+        let mut lines = Vec::with_capacity(num_lines);
+
+        for _ in 0..num_lines {
+            let line = take_line(iter)?;
+            if !line_map.contains_key(&line) {
                 line_map.insert(line.to_string(), lines.len());
                 lines.push(line.to_string());
             }
