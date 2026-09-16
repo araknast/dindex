@@ -71,8 +71,10 @@ impl DPackManager {
                 .expect("usize < 32 ??")
         {
             index.increment_head();
+            Ok(DPack::new())
+        } else {
+            self.load_pack(index.head())
         }
-        self.load_pack(index.head())
     }
 
     fn load_pack(&self, id: DPackId) -> io::Result<DPack> {
