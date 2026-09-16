@@ -59,9 +59,14 @@ impl DPackManager {
         }
     }
 
-    fn get_pack(&self, id: DPackId) -> io::Result<DPack> {
+    fn load_pack(&self, id: DPackId) -> io::Result<DPack> {
         let pack_path = self.pack_dir.join(String::from(id));
         Ok(fs::read(pack_path)?.into())
+    }
+
+    fn persist_pack(&self, pack: DPack, id: DPackId) -> io::Result<()> {
+        let path = self.pack_dir.join(String::from(id));
+        fs::write(path, Vec::<u8>::from(pack))
     }
 
     fn load_index(&self) -> Result<DPackIndex, DPackIndexLoadError> {
@@ -79,7 +84,7 @@ impl DPackManager {
             None => return Ok(None),
         };
 
-        let pack = self.get_pack(pack_id)?;
+        let pack = self.load_pack(pack_id)?;
 
         Ok(Some(
             pack.into_entry(name)
@@ -95,14 +100,11 @@ impl DPackManager {
                 return Err(e.into());
             }
         };
-        let pack_path = self.pack_dir.join(String::from(index.head()));
 
         let index_name = dindex.name();
         index.insert(&index_name, index.head());
         head_pack.insert(dindex);
-        let pack_data: Vec<u8> = head_pack.into();
-
-        fs::write(pack_path, &pack_data)?;
+        self.persist_pack(head_pack, index.head())?;
         self.persist_index(index)?;
         Ok(())
     }
