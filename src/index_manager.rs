@@ -3,7 +3,7 @@ use thiserror::Error;
 pub use crate::dindex::DIndexVersionId;
 use crate::{
     dindex::{self, DIndex},
-    dpack_manager::{DPackIndexParseError, DPackManager},
+    dpack_manager::{DPackIndexParseError, DPackManager, DPackPersistError},
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE as base64};
@@ -72,8 +72,8 @@ impl DIndexManager {
 
     fn persist_dindex(&mut self, index: DIndex) -> io::Result<()> {
         let index = match self.dpack_manager.try_persist(index) {
-            Some(index) => index,
-            None => return Ok(()),
+            Err(DPackPersistError { index, .. }) => index,
+            Ok(()) => return Ok(()),
         };
 
         let name_hash: String = base64.encode(index.name());

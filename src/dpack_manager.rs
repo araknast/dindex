@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs,
+    fs::{self, File},
     io::{self, ErrorKind::NotFound},
     path::{Path, PathBuf},
 };
@@ -10,6 +10,11 @@ use crate::dindex::DIndex;
 
 #[derive(Copy, Clone, PartialEq)]
 struct DPackId(u64);
+impl DPackId {
+    fn default() -> DPackId {
+        DPackId(0)
+    }
+}
 
 impl From<u64> for DPackId {
     fn from(i: u64) -> DPackId {
@@ -36,6 +41,12 @@ struct DPackIndex {
 }
 
 impl DPackIndex {
+    fn new() -> DPackIndex {
+        DPackIndex {
+            entries: HashMap::new(),
+            head: DPackId::default(),
+        }
+    }
     fn get_pack_id(&self, name: &str) -> Option<DPackId> {
         self.entries.get(name).copied()
     }
@@ -45,6 +56,13 @@ impl DPackIndex {
     fn increment_head(&mut self) {
         self.head.0 += 1;
     }
+}
+
+#[derive(Debug, Error)]
+#[error("Failed to persist DPack: {source}")]
+pub struct DPackPersistError {
+    pub index: DIndex,
+    pub source: io::Error,
 }
 
 #[derive(Debug, Error)]
@@ -123,6 +141,7 @@ impl From<DPackIndex> for Vec<u8> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 struct DPack {
     entries: Vec<DIndex>,
 }
@@ -173,17 +192,21 @@ impl DPackManager {
     const PACK_DIR_NAME: &str = "packs";
     const MAX_DPACK_SIZE_BYTES: u32 = 4000;
     pub fn new(data_root: impl AsRef<Path>) -> Result<DPackManager, DPackIndexParseError> {
+        let pack_dir = data_root.as_ref().join(Self::PACK_DIR_NAME);
+        fs::create_dir_all(&pack_dir)?;
+
         let index_path = data_root.as_ref().join(Self::INDEX_FILE_NAME);
-        let index_data = match fs::read(index_path) {
-            Ok(data) => data,
-            Err(e) if e.kind() == NotFound => Vec::new(),
-            Err(e) => return Err(DPackIndexParseError::FileLoad(e)),
+        let index = match fs::read(index_path) {
+            Ok(data) => DPackIndex::try_from(data)?,
+            Err(e) if e.kind() == NotFound => {
+                let head_path = pack_dir.join(String::from(DPackId::default()));
+                File::create(head_path)?;
+                DPackIndex::new()
+            }
+            Err(e) => return Err(e.into()),
         };
 
-        Ok(DPackManager {
-            pack_dir: data_root.as_ref().join(Self::PACK_DIR_NAME),
-            index: DPackIndex::try_from(index_data)?,
-        })
+        Ok(DPackManager { pack_dir, index })
     }
 
     fn new_head_pack(&mut self) -> DPack {
@@ -225,22 +248,36 @@ impl DPackManager {
         }
         panic!("DIndex does not exist in its DPack!")
     }
-    pub fn try_persist(&mut self, dindex: DIndex) -> Option<DIndex> {
+
+    // Returns the passed DIndex on failure, else None
+    pub fn try_persist(&mut self, dindex: DIndex) -> Result<(), DPackPersistError> {
         let pack_path = self.pack_dir.join(String::from(self.index.head));
         let mut head_pack = match self.get_head_pack() {
             Ok(pack) => pack,
-            Err(_) => return Some(dindex),
+            Err(e) => {
+                return Err(DPackPersistError {
+                    index: dindex,
+                    source: e,
+                });
+            }
         };
         self.index.insert(&dindex.name(), self.index.head);
         head_pack.push(dindex);
         let pack_data: Vec<u8> = head_pack.into();
 
         match fs::write(pack_path, &pack_data) {
-            Ok(_) => None,
-            Err(_) => DPack::try_from(pack_data)
-                .expect("Could not reserialize DPack!")
-                .pop()
-                .or(None),
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let dindex = DPack::try_from(pack_data)
+                    .expect("Could not reserialize DPack!")
+                    .pop()
+                    .expect("DIndex no longer exists in pack!");
+
+                Err(DPackPersistError {
+                    index: dindex,
+                    source: e,
+                })
+            }
         }
     }
 }
@@ -249,7 +286,63 @@ impl DPackManager {
 mod test {
     use std::collections::HashMap;
 
-    use crate::dpack_manager::{DPackId, DPackIndex};
+    use crate::{
+        dindex::DIndex,
+        dpack_manager::{DPack, DPackId, DPackIndex, DPackManager},
+    };
+
+    const VERSION1: &str = "lines\nof\nthe\nfile\n";
+    const VERSION2: &str = "the\nfile\n";
+    const VERSION3: &str = "the\nfile\nlines\nof\n";
+    const VERSION4: &str = "some\nnew\nlines\nof\nimportance\nfor\nthe\nfile\nhere\n";
+    const VERSION5: &str = "whole\ndifferent\ntext\n";
+
+    #[test]
+    fn test_load_persist() {
+        let tmp = assert_fs::TempDir::new().unwrap();
+        let data_root: &str = &tmp.path().to_string_lossy();
+
+        let file_name = "file.txt";
+
+        let mut manager = DPackManager::new(data_root).unwrap();
+        let mut base = DIndex::new(file_name, VERSION1);
+        manager.try_persist(base.clone()).unwrap();
+        let persisted = manager.try_load(file_name).unwrap().unwrap();
+
+        assert!(base == persisted);
+
+        base.insert_version(VERSION2);
+        manager.try_persist(base.clone()).unwrap();
+        let persisted = manager.try_load(file_name).unwrap().unwrap();
+        println!("{base:#?} | {persisted:#?}");
+        assert!(base == persisted);
+    }
+
+    #[test]
+    fn test_serialize_deserialize_dpack_single() {
+        let file_name = "file.txt";
+        let base = DIndex::new(file_name, VERSION1);
+        let mut pack = DPack::new();
+        pack.push(base.clone());
+        let serialized: Vec<u8> = pack.clone().into();
+        let deserialized: DPack = serialized.into();
+
+        assert!(pack == deserialized);
+    }
+    #[test]
+    fn test_serialize_deserialize_dpack_multi() {
+        let mut pack = DPack::new();
+
+        let version_data = [VERSION1, VERSION2, VERSION3, VERSION4, VERSION5];
+        for version in version_data {
+            pack.push(DIndex::new("", version));
+        }
+
+        let serialized: Vec<u8> = pack.clone().into();
+        let deserialized: DPack = serialized.into();
+
+        assert!(pack == deserialized);
+    }
 
     #[test]
     fn test_serialize_deserialize_index_empty() {
