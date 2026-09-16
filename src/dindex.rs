@@ -1,123 +1,16 @@
-use core::fmt;
-use sha2::{Digest, Sha256};
 use std::{collections::HashMap, ops::Range};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-struct DIndexRange((usize, usize));
+pub use errors::DeserializationError;
+use key::DIndexKey;
+use range::DIndexRange;
+use version::DIndexVersion;
+pub use version_id::DIndexVersionId;
 
-impl DIndexRange {
-    fn into_bytes(self) -> [u8; 16] {
-        self.into()
-    }
-}
-
-// Turn a DIndexRange into a byte array representing 2 64-bit unsigned integers
-impl From<DIndexRange> for [u8; 16] {
-    fn from(range: DIndexRange) -> [u8; 16] {
-        let mut arr = [0; 16];
-        arr[..8].copy_from_slice(
-            &u64::try_from(range.0.0)
-                .expect("usize > 64 ??")
-                .to_be_bytes(),
-        );
-        arr[8..].copy_from_slice(
-            &u64::try_from(range.0.1)
-                .expect("usize > 64 ??")
-                .to_be_bytes(),
-        );
-
-        arr
-    }
-}
-
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
-pub struct DIndexVersionId([u8; DIndexVersionId::LEN_BYTES]);
-
-impl DIndexVersionId {
-    const LEN_BYTES: usize = 32;
-    pub fn from_version_data(data: impl AsRef<[u8]>) -> DIndexVersionId {
-        DIndexVersionId(Sha256::digest(data).into())
-    }
-
-    fn into_bytes(self) -> [u8; DIndexVersionId::LEN_BYTES] {
-        self.into()
-    }
-}
-
-impl AsRef<[u8]> for DIndexVersionId {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl TryFrom<Vec<u8>> for DIndexVersionId {
-    type Error = DeserializationError;
-    fn try_from(vec: Vec<u8>) -> Result<DIndexVersionId, DeserializationError> {
-        let bytes: [u8; DIndexVersionId::LEN_BYTES] = vec
-            .try_into()
-            .map_err(|_| DeserializationError(String::from("Could not deserialize version id")))?;
-        Ok(DIndexVersionId(bytes))
-    }
-}
-
-impl From<DIndexVersionId> for [u8; DIndexVersionId::LEN_BYTES] {
-    fn from(id: DIndexVersionId) -> [u8; DIndexVersionId::LEN_BYTES] {
-        id.0
-    }
-}
-
-impl From<[u8; DIndexVersionId::LEN_BYTES]> for DIndexVersionId {
-    fn from(arr: [u8; DIndexVersionId::LEN_BYTES]) -> DIndexVersionId {
-        DIndexVersionId(arr)
-    }
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct DIndexVersion {
-    prev: DIndexVersionId,
-    next: DIndexVersionId,
-    data_key: DIndexKey,
-}
-
-impl From<DIndexRange> for Range<usize> {
-    fn from(range: DIndexRange) -> Range<usize> {
-        Range {
-            start: range.0.0,
-            end: range.0.1,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct DIndexKey(Vec<DIndexRange>);
-
-impl DIndexKey {
-    fn ranges(&self) -> impl Iterator<Item = &DIndexRange> {
-        self.0.iter()
-    }
-    fn into_ranges(self) -> impl Iterator<Item = DIndexRange> {
-        self.0.into_iter()
-    }
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-#[derive(Debug)]
-pub struct DeserializationError(String);
-
-impl fmt::Display for DeserializationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-impl From<&str> for DeserializationError {
-    fn from(str: &str) -> DeserializationError {
-        DeserializationError(String::from(str))
-    }
-}
-
-impl std::error::Error for DeserializationError {}
+mod errors;
+mod key;
+mod range;
+mod version;
+mod version_id;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DIndex {
@@ -150,20 +43,20 @@ impl From<DIndex> for Vec<u8> {
             output.extend(version_id.into_bytes());
 
             //prev id
-            output.extend(value.prev.into_bytes());
+            output.extend(value.prev().into_bytes());
 
             //next id
-            output.extend(value.next.into_bytes());
+            output.extend(value.next().into_bytes());
 
             // length of data key
             output.extend(
-                u64::try_from(value.data_key.len())
+                u64::try_from(value.key_len())
                     .expect("usize > 64 ??")
                     .to_be_bytes(),
             );
 
             // data key
-            for range in value.data_key.into_ranges() {
+            for range in value.into_data_key().into_ranges() {
                 output.extend(range.into_bytes());
             }
         }
@@ -186,7 +79,7 @@ impl DIndex {
     pub fn new(name: &str, data: &str) -> DIndex {
         let mut index = DIndex {
             name: String::from(name),
-            head: DIndexVersionId([0; DIndexVersionId::LEN_BYTES]),
+            head: DIndexVersionId::default(),
             version_map: HashMap::new(),
             line_map: HashMap::new(),
             lines: Vec::new(),
@@ -195,11 +88,7 @@ impl DIndex {
         let data_key = index.key_from_data(data);
         index.version_map.insert(
             index.head,
-            DIndexVersion {
-                prev: index.head,
-                next: index.head,
-                data_key,
-            },
+            DIndexVersion::new(index.head, index.head, data_key),
         );
         index
     }
@@ -253,9 +142,9 @@ impl DIndex {
         let map_size = take_u64(iter)?;
 
         for _ in 0..map_size {
-            let version_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(iter)?;
-            let prev_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(iter)?;
-            let next_id: [u8; DIndexVersionId::LEN_BYTES] = take_bytes(iter)?;
+            let version_id: DIndexVersionId = take_bytes::<_>(iter)?.into();
+            let prev_id: DIndexVersionId = take_bytes::<_>(iter)?.into();
+            let next_id: DIndexVersionId = take_bytes::<_>(iter)?.into();
             let data_key_len = take_u64(iter)?;
 
             let mut data_key_vec: Vec<DIndexRange> =
@@ -264,19 +153,12 @@ impl DIndex {
             for _ in 0..data_key_len {
                 let range_start: usize = take_u64(iter)?.try_into().expect("range_start > usize");
                 let range_end: usize = take_u64(iter)?.try_into().expect("range_start > usize");
-                data_key_vec.push(DIndexRange((range_start, range_end)));
+                data_key_vec.push(DIndexRange::new(range_start, range_end));
             }
 
-            let data_key = DIndexKey(data_key_vec);
+            let data_key: DIndexKey = data_key_vec.into();
 
-            version_map.insert(
-                DIndexVersionId(version_id),
-                DIndexVersion {
-                    prev: DIndexVersionId(prev_id),
-                    next: DIndexVersionId(next_id),
-                    data_key,
-                },
-            );
+            version_map.insert(version_id, DIndexVersion::new(prev_id, next_id, data_key));
         }
         let num_lines: usize = take_u64(iter)?.try_into().expect("num lines > usize !");
         let mut line_map = HashMap::new();
@@ -309,11 +191,9 @@ impl DIndex {
     pub fn insert_version(&mut self, version_data: &str) -> DIndexVersionId {
         let version_id = DIndexVersionId::from_version_data(version_data);
         let data_key = self.key_from_data(version_data);
-        self.version_map.entry(version_id).or_insert(DIndexVersion {
-            prev: self.head,
-            next: version_id,
-            data_key,
-        });
+        self.version_map
+            .entry(version_id)
+            .or_insert(DIndexVersion::new(self.head, version_id, data_key));
 
         self.update_head(version_id);
 
@@ -325,12 +205,12 @@ impl DIndex {
             .version_map
             .get_mut(&self.head)
             .expect("DIndex has no head!");
-        prev_head.next = new_head;
+        prev_head.set_next(new_head);
         self.head = new_head;
     }
 
     pub fn get_version_data(&self, id: DIndexVersionId) -> Option<String> {
-        Some(self.data_from_key(&self.get_version(id)?.data_key))
+        Some(self.data_from_key(self.get_version(id)?.data_key()))
     }
 
     pub fn get_version(&self, id: DIndexVersionId) -> Option<&DIndexVersion> {
@@ -352,15 +232,15 @@ impl DIndex {
         for line in version_data.split_inclusive("\n") {
             let line_num = *self.line_map.get(line).unwrap();
             if line_num != range_end {
-                ranges.push(DIndexRange((range_start, range_end)));
+                ranges.push(DIndexRange::new(range_start, range_end));
                 range_start = line_num;
                 range_end = line_num + 1;
             } else {
                 range_end = line_num + 1;
             }
         }
-        ranges.push(DIndexRange((range_start, range_end)));
-        DIndexKey(ranges)
+        ranges.push(DIndexRange::new(range_start, range_end));
+        ranges.into()
     }
 
     fn data_from_key(&self, key: &DIndexKey) -> String {
@@ -430,22 +310,22 @@ mod test {
 
         let curr = index.head();
         assert!(index.get_version_data(curr).unwrap() == VERSION3);
-        let prev_version = index.get_version(curr).unwrap().prev;
-        let next_version = index.get_version(curr).unwrap().next;
+        let prev_version = index.get_version(curr).unwrap().prev();
+        let next_version = index.get_version(curr).unwrap().next();
         assert!(index.get_version_data(prev_version).unwrap() == VERSION2);
         assert!(index.get_version_data(next_version).unwrap() == VERSION3);
 
         let curr = prev_version;
         assert!(index.get_version_data(curr).unwrap() == VERSION2);
-        let prev_version = index.get_version(curr).unwrap().prev;
-        let next_version = index.get_version(curr).unwrap().next;
+        let prev_version = index.get_version(curr).unwrap().prev();
+        let next_version = index.get_version(curr).unwrap().next();
         assert!(index.get_version_data(prev_version).unwrap() == VERSION1);
         assert!(index.get_version_data(next_version).unwrap() == VERSION3);
 
         let curr = prev_version;
         assert!(index.get_version_data(curr).unwrap() == VERSION1);
-        let prev_version = index.get_version(curr).unwrap().prev;
-        let next_version = index.get_version(curr).unwrap().next;
+        let prev_version = index.get_version(curr).unwrap().prev();
+        let next_version = index.get_version(curr).unwrap().next();
         assert!(index.get_version_data(prev_version).unwrap() == VERSION1);
         assert!(index.get_version_data(next_version).unwrap() == VERSION2);
     }
@@ -475,7 +355,7 @@ mod test {
     fn test_update_new_file() {
         let mut index = DIndex::new("", VERSION1);
         let key = index.key_from_data(VERSION1);
-        assert!(key.0.len() == 1);
+        assert!(key.len() == 1);
     }
     #[test]
     fn test_update_subset_files() {
@@ -484,17 +364,17 @@ mod test {
         let key2 = index.key_from_data(VERSION2);
         let key3 = index.key_from_data(VERSION3);
 
-        assert!(key1.0.len() == 1);
-        assert!(key2.0.len() == 2);
-        assert!(key3.0.len() == 3);
+        assert!(key1.len() == 1);
+        assert!(key2.len() == 2);
+        assert!(key3.len() == 3);
     }
     #[test]
     fn test_update_intersecting_files() {
         let mut index = DIndex::new("", VERSION1);
         let key1 = index.key_from_data(VERSION1);
         let key2 = index.key_from_data(VERSION4);
-        assert!(key1.0.len() == 1);
-        assert!(key2.0.len() == 6);
+        assert!(key1.len() == 1);
+        assert!(key2.len() == 6);
     }
 
     #[test]
@@ -502,7 +382,7 @@ mod test {
         let mut index = DIndex::new("", VERSION1);
         let key1 = index.key_from_data(VERSION1);
         let key2 = index.key_from_data(VERSION5);
-        assert!(key1.0.len() == 1);
-        assert!(key2.0.len() == 2);
+        assert!(key1.len() == 1);
+        assert!(key2.len() == 2);
     }
 }
