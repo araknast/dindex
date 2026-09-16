@@ -69,7 +69,10 @@ impl From<DIndex> for Vec<u8> {
         );
 
         // index lines
-        output.extend(index.lines.into_iter().map(String::into_bytes).flatten());
+        for line in index.lines {
+            output.extend(line.into_bytes());
+            output.push(b'\n');
+        }
 
         output
     }
@@ -81,9 +84,10 @@ impl DIndex {
             name: String::from(name),
             head: DIndexVersionId::default(),
             version_map: HashMap::new(),
-            line_map: HashMap::new(),
-            lines: Vec::new(),
+            line_map: HashMap::from([(String::from(""), 0)]),
+            lines: vec![String::from("")],
         };
+
         index.head = DIndexVersionId::from_version_data(data);
         let data_key = index.key_from_data(data);
         index.version_map.insert(
@@ -110,16 +114,16 @@ impl DIndex {
             Ok(arr)
         }
 
-        fn take_line(iter: &mut impl Iterator<Item = u8>) -> Result<String, DeserializationError> {
+        fn take_line(iter: &mut impl Iterator<Item = u8>) -> String {
             let mut data = Vec::new();
             while let Some(byte) = iter.next() {
-                data.push(byte);
                 if byte == b'\n' {
-                    return Ok(String::from_utf8_lossy_owned(data));
+                    break;
+                } else {
+                    data.push(byte);
                 }
             }
-
-            Err("File ended early.".into())
+            String::from_utf8_lossy_owned(data)
         }
 
         fn take_name(iter: &mut impl Iterator<Item = u8>) -> Result<String, DeserializationError> {
@@ -165,7 +169,7 @@ impl DIndex {
         let mut lines = Vec::with_capacity(num_lines);
 
         for _ in 0..num_lines {
-            let line = take_line(iter)?;
+            let line = take_line(iter);
             if !line_map.contains_key(&line) {
                 line_map.insert(line.to_string(), lines.len());
                 lines.push(line.to_string());
@@ -223,13 +227,13 @@ impl DIndex {
         let mut range_start = 0;
         let mut range_end = 0;
 
-        for line in version_data.split_inclusive("\n") {
+        for line in version_data.split("\n") {
             if !self.line_map.contains_key(line) {
                 self.line_map.insert(line.to_string(), self.lines.len());
                 self.lines.push(line.to_string());
             }
         }
-        for line in version_data.split_inclusive("\n") {
+        for line in version_data.split("\n") {
             let line_num = *self.line_map.get(line).unwrap();
             if line_num == range_end {
                 range_end = line_num + 1;
@@ -253,7 +257,7 @@ impl DIndex {
         while let Some(range) = key.next() {
             data.extend_from_slice(&self.lines[Range::from(*range)]);
         }
-        data.join("")
+        data.join("\n")
     }
 }
 
@@ -261,7 +265,7 @@ impl DIndex {
 mod test {
     use crate::dindex::DIndex;
 
-    const VERSION1: &str = "lines\nof\nthe\nfile\n";
+    const VERSION1: &str = "lines\nof\nthe\nfile";
     const VERSION2: &str = "the\nfile\n";
     const VERSION3: &str = "the\nfile\nlines\nof\n";
     const VERSION4: &str = "some\nnew\nlines\nof\nimportance\nfor\nthe\nfile\nhere\n";
