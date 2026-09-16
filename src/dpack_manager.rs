@@ -305,6 +305,7 @@ mod test {
         let data_root: &str = &tmp.path().to_string_lossy();
 
         let file_name = "file.txt";
+        let version_data = [VERSION1, VERSION2, VERSION3, VERSION4, VERSION5];
 
         let mut manager = DPackManager::new(data_root).unwrap();
         let mut index = DIndex::new(file_name, VERSION1);
@@ -313,11 +314,13 @@ mod test {
 
         assert!(index == persisted);
 
-        index.insert_version(VERSION2);
-        manager.try_persist(index.clone()).unwrap();
-        let persisted = manager.try_load(file_name).unwrap().unwrap();
+        for version in version_data {
+            index.insert_version(version);
+            manager.try_persist(index.clone()).unwrap();
+            let persisted = manager.try_load(file_name).unwrap().unwrap();
 
-        assert!(index == persisted);
+            assert!(index == persisted);
+        }
     }
 
     #[test]
