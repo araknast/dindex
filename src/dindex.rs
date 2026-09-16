@@ -231,13 +231,17 @@ impl DIndex {
         }
         for line in version_data.split_inclusive("\n") {
             let line_num = *self.line_map.get(line).unwrap();
-            if line_num != range_end {
-                ranges.push(DIndexRange::new(range_start, range_end));
-                range_start = line_num;
+            if line_num == range_end {
                 range_end = line_num + 1;
-            } else {
-                range_end = line_num + 1;
+                continue;
             }
+
+            if range_start != range_end {
+                ranges.push(DIndexRange::new(range_start, range_end));
+            }
+
+            range_start = line_num;
+            range_end = line_num + 1;
         }
         ranges.push(DIndexRange::new(range_start, range_end));
         ranges.into()
