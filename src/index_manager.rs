@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub use crate::dindex::DIndexVersionId;
@@ -6,7 +7,6 @@ use crate::{
     dpack_manager::{DPackIndexParseError, DPackManager, DPackPersistError},
 };
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE as base64};
 use std::{
     fmt::Debug,
     fs::{self, File},
@@ -50,13 +50,17 @@ impl DIndexManager {
         self.data_root.as_path()
     }
 
+    fn encode_name(name: &str) -> String {
+        hex::encode(Sha256::digest(name))
+    }
+
     fn load_dindex(&self, name: &str) -> Result<DIndex, LoadError> {
         if let Ok(Some(index)) = self.dpack_manager.try_load(name) {
             return Ok(index);
         }
 
-        let name_hash: String = base64.encode(name);
-        let path = Path::new(&self.data_root).join(name_hash);
+        let file_name: String = Self::encode_name(name);
+        let path = Path::new(&self.data_root).join(file_name);
         let file = File::open(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 LoadError::Nonexistent
@@ -76,8 +80,8 @@ impl DIndexManager {
             Ok(()) => return Ok(()),
         };
 
-        let name_hash: String = base64.encode(index.name());
-        let path = Path::new(&self.data_root).join(name_hash);
+        let file_name: String = Self::encode_name(&index.name());
+        let path = Path::new(&self.data_root).join(file_name);
         let file = File::create(path)?;
         let data: &[u8] = &Vec::<u8>::from(index);
         zstd::stream::copy_encode(data, file, 3)?;
@@ -103,9 +107,9 @@ impl DIndexManager {
         name: &str,
         version_id: DIndexVersionId,
     ) -> Result<Vec<u8>, LoadError> {
-        let name_hash: String = base64.encode(name);
+        let file_name: String = Self::encode_name(name);
         let version_id_string = hex::encode(version_id);
-        let dirname = Path::new(&self.data_root).join("bin").join(&name_hash);
+        let dirname = Path::new(&self.data_root).join("bin").join(&file_name);
         let path = dirname.join(&version_id_string);
 
         let file = File::open(&path)?;
@@ -133,12 +137,12 @@ impl DIndexManager {
 
     pub fn insert_blob(&self, name: &str, data: Vec<u8>) -> io::Result<DIndexVersionId> {
         let data: &[u8] = &data;
-        let name_hash: String = base64.encode(name);
+        let file_name: String = Self::encode_name(name);
 
         let version_id = DIndexVersionId::from_version_data(data);
         let version_id_string = hex::encode(version_id);
 
-        let dirname = Path::new(&self.data_root).join("bin").join(&name_hash);
+        let dirname = Path::new(&self.data_root).join("bin").join(&file_name);
         let path = dirname.join(&version_id_string);
 
         let file = match File::create(&path) {
