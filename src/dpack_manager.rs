@@ -143,30 +143,31 @@ impl From<DPackIndex> for Vec<u8> {
 
 #[derive(Clone, Debug, PartialEq)]
 struct DPack {
-    entries: Vec<DIndex>,
+    entries: HashMap<String, DIndex>,
 }
 
 impl DPack {
     fn new() -> DPack {
         DPack {
-            entries: Vec::new(),
+            entries: HashMap::new(),
         }
     }
 
-    fn push(&mut self, index: DIndex) {
-        self.entries.push(index);
+    fn insert(&mut self, index: DIndex) {
+        self.entries.insert(index.name(), index);
     }
-    fn pop(&mut self) -> Option<DIndex> {
-        self.entries.pop()
+
+    fn into_entry(mut self, name: &str) -> Option<DIndex> {
+        self.entries.remove(name)
     }
 }
 
 impl From<Vec<u8>> for DPack {
     fn from(data: Vec<u8>) -> DPack {
-        let mut entries = Vec::new();
+        let mut entries = HashMap::new();
         let mut iter = data.into_iter();
         while let Ok(index) = DIndex::from_byte_iter(&mut iter) {
-            entries.push(index)
+            entries.insert(index.name(), index);
         }
 
         DPack { entries }
@@ -176,7 +177,7 @@ impl From<Vec<u8>> for DPack {
 impl From<DPack> for Vec<u8> {
     fn from(pack: DPack) -> Vec<u8> {
         let mut data = Vec::new();
-        for entry in pack.entries {
+        for (_, entry) in pack.entries {
             data.append(&mut Vec::<u8>::from(entry));
         }
         data
@@ -241,12 +242,10 @@ impl DPackManager {
 
         let pack = self.get_pack(pack_id)?;
 
-        for entry in pack.entries {
-            if entry.name() == name {
-                return Ok(Some(entry));
-            }
-        }
-        panic!("DIndex does not exist in its DPack!")
+        Ok(Some(
+            pack.into_entry(name)
+                .expect("DIndex does not exist in its mapped DPack!"),
+        ))
     }
 
     // Returns the passed DIndex on failure, else None
@@ -261,17 +260,20 @@ impl DPackManager {
                 });
             }
         };
-        self.index.insert(&dindex.name(), self.index.head);
-        head_pack.push(dindex);
+        let index_name = dindex.name();
+        self.index.insert(&index_name, self.index.head);
+        head_pack.insert(dindex);
         let pack_data: Vec<u8> = head_pack.into();
 
+        // Write the DPack data. If the write fails we will need to get the
+        // DIndex back and return it to the caller
         match fs::write(pack_path, &pack_data) {
             Ok(_) => Ok(()),
             Err(e) => {
                 let dindex = DPack::try_from(pack_data)
                     .expect("Could not reserialize DPack!")
-                    .pop()
-                    .expect("DIndex no longer exists in pack!");
+                    .into_entry(&index_name)
+                    .expect("DIndex no longer exists in reserialized pack!");
 
                 Err(DPackPersistError {
                     index: dindex,
@@ -305,17 +307,17 @@ mod test {
         let file_name = "file.txt";
 
         let mut manager = DPackManager::new(data_root).unwrap();
-        let mut base = DIndex::new(file_name, VERSION1);
-        manager.try_persist(base.clone()).unwrap();
+        let mut index = DIndex::new(file_name, VERSION1);
+        manager.try_persist(index.clone()).unwrap();
         let persisted = manager.try_load(file_name).unwrap().unwrap();
 
-        assert!(base == persisted);
+        assert!(index == persisted);
 
-        base.insert_version(VERSION2);
-        manager.try_persist(base.clone()).unwrap();
+        index.insert_version(VERSION2);
+        manager.try_persist(index.clone()).unwrap();
         let persisted = manager.try_load(file_name).unwrap().unwrap();
-        println!("{base:#?} | {persisted:#?}");
-        assert!(base == persisted);
+
+        assert!(index == persisted);
     }
 
     #[test]
@@ -323,11 +325,11 @@ mod test {
         let file_name = "file.txt";
         let base = DIndex::new(file_name, VERSION1);
         let mut pack = DPack::new();
-        pack.push(base.clone());
+        pack.insert(base.clone());
         let serialized: Vec<u8> = pack.clone().into();
-        let deserialized: DPack = serialized.into();
+        let persisted: DPack = serialized.into();
 
-        assert!(pack == deserialized);
+        assert!(pack == persisted);
     }
     #[test]
     fn test_serialize_deserialize_dpack_multi() {
@@ -335,13 +337,13 @@ mod test {
 
         let version_data = [VERSION1, VERSION2, VERSION3, VERSION4, VERSION5];
         for version in version_data {
-            pack.push(DIndex::new("", version));
+            pack.insert(DIndex::new("", version));
         }
 
         let serialized: Vec<u8> = pack.clone().into();
-        let deserialized: DPack = serialized.into();
+        let persisted: DPack = serialized.into();
 
-        assert!(pack == deserialized);
+        assert!(pack == persisted);
     }
 
     #[test]
@@ -352,9 +354,9 @@ mod test {
         };
 
         let serialized: Vec<u8> = index.clone().into();
-        let deserialized: DPackIndex = serialized.try_into().unwrap();
+        let persisted: DPackIndex = serialized.try_into().unwrap();
 
-        assert!(deserialized == index)
+        assert!(persisted == index)
     }
 
     #[test]
@@ -368,8 +370,8 @@ mod test {
             head: DPackId(2),
         };
         let serialized: Vec<u8> = index.clone().into();
-        let deserialized: DPackIndex = serialized.try_into().unwrap();
+        let persisted: DPackIndex = serialized.try_into().unwrap();
 
-        assert!(deserialized == index)
+        assert!(persisted == index)
     }
 }
