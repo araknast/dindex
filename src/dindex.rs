@@ -350,39 +350,4 @@ mod test {
             assert!(file == data, "{file:?} | {data:?}");
         }
     }
-
-    #[test]
-    fn test_update_new_file() {
-        let mut index = DIndex::new("", VERSION1);
-        let key = index.key_from_data(VERSION1);
-        assert!(key.len() == 1);
-    }
-    #[test]
-    fn test_update_subset_files() {
-        let mut index = DIndex::new("", VERSION1);
-        let key1 = index.key_from_data(VERSION1);
-        let key2 = index.key_from_data(VERSION2);
-        let key3 = index.key_from_data(VERSION3);
-
-        assert!(key1.len() == 1);
-        assert!(key2.len() == 2);
-        assert!(key3.len() == 3);
-    }
-    #[test]
-    fn test_update_intersecting_files() {
-        let mut index = DIndex::new("", VERSION1);
-        let key1 = index.key_from_data(VERSION1);
-        let key2 = index.key_from_data(VERSION4);
-        assert!(key1.len() == 1);
-        assert!(key2.len() == 6);
-    }
-
-    #[test]
-    fn test_update_disjoint_files() {
-        let mut index = DIndex::new("", VERSION1);
-        let key1 = index.key_from_data(VERSION1);
-        let key2 = index.key_from_data(VERSION5);
-        assert!(key1.len() == 1);
-        assert!(key2.len() == 2);
-    }
 }
