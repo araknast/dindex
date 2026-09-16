@@ -8,6 +8,7 @@ impl From<Vec<DIndexRange>> for DIndexKey {
         DIndexKey(ranges)
     }
 }
+
 impl DIndexKey {
     pub(super) fn ranges(&self) -> impl Iterator<Item = &DIndexRange> {
         self.0.iter()

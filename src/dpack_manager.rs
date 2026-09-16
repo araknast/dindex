@@ -1,188 +1,20 @@
+mod dpack;
+mod dpack_id;
+mod dpack_index;
+mod errors;
+
+use dpack::DPack;
+use dpack_id::DPackId;
+use dpack_index::DPackIndex;
+pub use errors::{DPackIndexParseError, DPackPersistError};
+
 use std::{
-    collections::HashMap,
     fs::{self, File},
     io::{self, ErrorKind::NotFound},
     path::{Path, PathBuf},
 };
-use thiserror::Error;
 
 use crate::dindex::DIndex;
-
-#[derive(Copy, Clone, PartialEq)]
-struct DPackId(u64);
-impl DPackId {
-    fn default() -> DPackId {
-        DPackId(0)
-    }
-}
-
-impl From<u64> for DPackId {
-    fn from(i: u64) -> DPackId {
-        DPackId(i)
-    }
-}
-
-impl From<DPackId> for [u8; 8] {
-    fn from(id: DPackId) -> [u8; 8] {
-        id.0.to_be_bytes()
-    }
-}
-
-impl From<DPackId> for String {
-    fn from(id: DPackId) -> String {
-        id.0.to_string()
-    }
-}
-
-#[derive(Clone, PartialEq)]
-struct DPackIndex {
-    entries: HashMap<String, DPackId>,
-    head: DPackId,
-}
-
-impl DPackIndex {
-    fn new() -> DPackIndex {
-        DPackIndex {
-            entries: HashMap::new(),
-            head: DPackId::default(),
-        }
-    }
-    fn get_pack_id(&self, name: &str) -> Option<DPackId> {
-        self.entries.get(name).copied()
-    }
-    fn insert(&mut self, name: &str, id: DPackId) {
-        self.entries.insert(name.to_string(), id);
-    }
-    fn increment_head(&mut self) {
-        self.head.0 += 1;
-    }
-}
-
-#[derive(Debug, Error)]
-#[error("Failed to persist DPack: {source}")]
-pub struct DPackPersistError {
-    pub index: DIndex,
-    pub source: io::Error,
-}
-
-#[derive(Debug, Error)]
-pub enum DPackIndexParseError {
-    #[error("File ended early.")]
-    EarlyTermination,
-    #[error("Could not read index file")]
-    FileLoad(#[from] std::io::Error),
-}
-
-impl TryFrom<Vec<u8>> for DPackIndex {
-    type Error = DPackIndexParseError;
-    fn try_from(data: Vec<u8>) -> Result<DPackIndex, Self::Error> {
-        fn take_u64(iter: &mut impl Iterator<Item = u8>) -> Result<u64, DPackIndexParseError> {
-            Ok(u64::from_be_bytes(take_bytes(iter)?))
-        }
-
-        fn take_bytes<const N: usize>(
-            iter: &mut impl Iterator<Item = u8>,
-        ) -> Result<[u8; N], DPackIndexParseError> {
-            let mut arr: [u8; N] = [0; N];
-            for i in 0..N {
-                arr[i] = iter.next().ok_or(DPackIndexParseError::EarlyTermination)?;
-            }
-            Ok(arr)
-        }
-
-        fn take_name(iter: &mut impl Iterator<Item = u8>) -> Result<String, DPackIndexParseError> {
-            let mut data = Vec::new();
-            while let Some(byte) = iter.next() {
-                if byte == b'\0' {
-                    return Ok(String::from_utf8_lossy_owned(data));
-                } else {
-                    data.push(byte)
-                }
-            }
-
-            Err(DPackIndexParseError::EarlyTermination)
-        }
-
-        if data.len() == 0 {
-            return Ok(DPackIndex {
-                entries: HashMap::new(),
-                head: DPackId(0),
-            });
-        }
-
-        let mut entries = HashMap::new();
-        let mut iter = data.into_iter();
-        let head = DPackId(take_u64(&mut iter)?);
-        let size = take_u64(&mut iter)?;
-        for _ in 0..size {
-            let name = take_name(&mut iter)?;
-            let pack_id = DPackId(take_u64(&mut iter)?);
-            entries.insert(name, pack_id);
-        }
-        Ok(DPackIndex { entries, head })
-    }
-}
-
-impl From<DPackIndex> for Vec<u8> {
-    fn from(index: DPackIndex) -> Vec<u8> {
-        let mut output = Vec::new();
-        output.extend(<[u8; 8]>::from(index.head));
-        output.extend(
-            u64::try_from(index.entries.len())
-                .expect("usize > 64 ??")
-                .to_be_bytes(),
-        );
-        for (name, pack_id) in index.entries {
-            output.extend(name.into_bytes());
-            output.push(b'\0');
-            output.extend(<[u8; 8]>::from(pack_id));
-        }
-        output
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct DPack {
-    entries: HashMap<String, DIndex>,
-}
-
-impl DPack {
-    fn new() -> DPack {
-        DPack {
-            entries: HashMap::new(),
-        }
-    }
-
-    fn insert(&mut self, index: DIndex) {
-        self.entries.insert(index.name(), index);
-    }
-
-    fn into_entry(mut self, name: &str) -> Option<DIndex> {
-        self.entries.remove(name)
-    }
-}
-
-impl From<Vec<u8>> for DPack {
-    fn from(data: Vec<u8>) -> DPack {
-        let mut entries = HashMap::new();
-        let mut iter = data.into_iter();
-        while let Ok(index) = DIndex::from_byte_iter(&mut iter) {
-            entries.insert(index.name(), index);
-        }
-
-        DPack { entries }
-    }
-}
-
-impl From<DPack> for Vec<u8> {
-    fn from(pack: DPack) -> Vec<u8> {
-        let mut data = Vec::new();
-        for (_, entry) in pack.entries {
-            data.append(&mut Vec::<u8>::from(entry));
-        }
-        data
-    }
-}
 
 pub struct DPackManager {
     index: DPackIndex,
@@ -202,7 +34,7 @@ impl DPackManager {
             Err(e) if e.kind() == NotFound => {
                 let head_path = pack_dir.join(String::from(DPackId::default()));
                 File::create(head_path)?;
-                DPackIndex::new()
+                DPackIndex::default()
             }
             Err(e) => return Err(e.into()),
         };
@@ -216,7 +48,7 @@ impl DPackManager {
     }
 
     fn get_head_pack(&mut self) -> io::Result<DPack> {
-        let pack_path = self.pack_dir.join(String::from(self.index.head));
+        let pack_path = self.pack_dir.join(String::from(self.index.head()));
         let data = fs::read(pack_path)?;
         if data.len()
             > Self::MAX_DPACK_SIZE_BYTES
@@ -250,7 +82,7 @@ impl DPackManager {
 
     // Returns the passed DIndex on failure, else None
     pub fn try_persist(&mut self, dindex: DIndex) -> Result<(), DPackPersistError> {
-        let pack_path = self.pack_dir.join(String::from(self.index.head));
+        let pack_path = self.pack_dir.join(String::from(self.index.head()));
         let mut head_pack = match self.get_head_pack() {
             Ok(pack) => pack,
             Err(e) => {
@@ -261,7 +93,7 @@ impl DPackManager {
             }
         };
         let index_name = dindex.name();
-        self.index.insert(&index_name, self.index.head);
+        self.index.insert(&index_name, self.index.head());
         head_pack.insert(dindex);
         let pack_data: Vec<u8> = head_pack.into();
 
@@ -351,10 +183,7 @@ mod test {
 
     #[test]
     fn test_serialize_deserialize_index_empty() {
-        let index = DPackIndex {
-            entries: HashMap::new(),
-            head: DPackId(0),
-        };
+        let index = DPackIndex::new(HashMap::new(), DPackId::new(0));
 
         let serialized: Vec<u8> = index.clone().into();
         let persisted: DPackIndex = serialized.try_into().unwrap();
@@ -364,14 +193,14 @@ mod test {
 
     #[test]
     fn test_serialize_deserialize_index() {
-        let index = DPackIndex {
-            entries: HashMap::from([
-                (String::from("file1"), DPackId(0)),
-                (String::from("file2"), DPackId(1)),
-                (String::from("file3"), DPackId(2)),
+        let index = DPackIndex::new(
+            HashMap::from([
+                (String::from("file1"), DPackId::new(0)),
+                (String::from("file2"), DPackId::new(1)),
+                (String::from("file3"), DPackId::new(2)),
             ]),
-            head: DPackId(2),
-        };
+            DPackId::new(2),
+        );
         let serialized: Vec<u8> = index.clone().into();
         let persisted: DPackIndex = serialized.try_into().unwrap();
 
