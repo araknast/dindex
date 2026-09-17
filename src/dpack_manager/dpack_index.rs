@@ -9,6 +9,7 @@ pub(super) struct DPackIndex {
 }
 
 impl DPackIndex {
+    #[cfg(test)]
     pub(super) fn new(entries: HashMap<String, DPackId>, head: DPackId) -> DPackIndex {
         DPackIndex { entries, head }
     }
