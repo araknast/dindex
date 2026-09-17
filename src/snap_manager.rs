@@ -7,8 +7,9 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    dindex::{self, DIndexVersionId},
-    index_manager::{self, DIndexManager},
+    blob_manager::{self, BlobManager},
+    dindex::{self, DIndex, DIndexVersionId},
+    dpack_manager::{self, DPackLoadError, DPackManager, DPackPersistError},
 };
 
 #[derive(Debug, Clone)]
@@ -91,67 +92,119 @@ pub enum SnapshotReadError {
 }
 
 #[derive(Debug, Error)]
-pub enum SnapshotPersistError {
-    #[error("Could not load the snapshot DIndex")]
-    DIndexLoad(#[from] index_manager::LoadError),
-}
+#[error("Could not persist snapshot")]
+pub struct SnapshotPersistError(#[from] DIndexInsertError);
 
 #[derive(Debug, Error)]
 pub enum SnapshotLoadError {
     #[error("Error reading snapshot data")]
     Read(#[from] SnapshotReadError),
-    #[error("Could not load the snapshot DIndex")]
-    DIndexLoad(#[from] index_manager::LoadError),
+    #[error("Could not load snapshot: could not load the snapshot index")]
+    IndexLoad(#[from] SnapshotIndexLoadError),
 }
+
+#[derive(Debug, Error)]
+pub enum SnapshotIndexLoadError {
+    #[error("Could not load the snapshot DPack")]
+    DPackLoad(#[from] DPackLoadError),
+    #[error("Snapshot index does not exist in snapshot DPack!")]
+    NoIndex,
+}
+
+#[derive(Debug, Error)]
+#[error("Could not persist snapshot index")]
+pub struct SnapshotIndexPersistError(#[from] DPackPersistError);
 
 #[derive(Debug, Error)]
 pub enum SnapshotCreationError {
     #[error("I/O error attempting to create snapshot")]
     Io(#[from] io::Error),
-    #[error("Could not load the file's DIndex")]
-    DIndexLoad(#[from] index_manager::LoadError),
-    #[error("Could not load the parent snapshot")]
-    ParentSnapLoad(#[from] SnapshotLoadError),
-    #[error("Parent snapshot does not exist")]
-    ParentSnapDoesNotExist,
-    #[error("Could not persist snapshot")]
+    #[error("Could not create snapshot: could not update a file's Dindex")]
+    DIndexInsert(#[from] DIndexInsertError),
+    #[error("Could not create snapshot: could not persist snapshot")]
     SnapshotPersist(#[from] SnapshotPersistError),
+    #[error("Could not create snapshot: could not get head")]
+    GetHead(#[from] GetHeadError),
 }
 
 #[derive(Debug, Error)]
-pub enum SnapshotManagerInitializationError {
-    #[error("Could not initialize index manager")]
-    IndexManagerInit(#[from] index_manager::InitializationError),
+pub enum InitializationError {
+    #[error("Could not initialize dpack manager")]
+    DPackManager(#[from] dpack_manager::InitializationError),
+    #[error("Could not initialize blob manager")]
+    BlobManager(#[from] blob_manager::InitializationError),
+}
+
+#[derive(Debug, Error)]
+pub enum GetHeadError {
+    #[error("Could not get head: could not load snap index")]
+    IndexLoad(#[from] SnapshotIndexLoadError),
+}
+
+#[derive(Debug, Error)]
+pub enum DIndexInsertError {
+    #[error("Could not insert into DIndex: DIndex does not exist")]
+    Nonexistent,
+    #[error("Could not insert into DIndex: could not load DPack")]
+    DPackLoad(#[from] DPackLoadError),
+    #[error("Could not insert into DIndex: could not persist DPack")]
+    DPackPersist(#[from] DPackPersistError),
 }
 pub struct SnapshotManager {
-    data_index_manager: DIndexManager,
-    snap_index_manager: DIndexManager,
+    data_dpack_manager: DPackManager,
+    snap_dpack_manager: DPackManager,
+    blob_manager: BlobManager,
 }
 
 impl SnapshotManager {
     const SNAP_INDEX_NAME: &str = "__snap_index";
-    pub fn new(
-        data_root: impl AsRef<Path>,
-    ) -> Result<SnapshotManager, SnapshotManagerInitializationError> {
-        let manager = DIndexManager::new(data_root)?;
-        let snap_root = Path::new(&manager.data_root()).join("snaps");
+    pub fn new(data_root: impl AsRef<Path>) -> Result<SnapshotManager, InitializationError> {
+        let snap_root = data_root.as_ref().join("snaps");
+        let blob_root = data_root.as_ref().join("blobs");
+        let data_dpack_manager = DPackManager::new(data_root)?;
+        let snap_dpack_manager = DPackManager::new(snap_root)?;
+        let blob_manager = BlobManager::new(blob_root)?;
         Ok(SnapshotManager {
-            data_index_manager: manager,
-            snap_index_manager: DIndexManager::new(snap_root)?,
+            data_dpack_manager,
+            snap_dpack_manager,
+            blob_manager,
         })
     }
 
-    fn get_head(&self) -> Result<DIndexVersionId, index_manager::LoadError> {
-        self.snap_index_manager.get_head(Self::SNAP_INDEX_NAME)
+    fn get_head(&self) -> Result<DIndexVersionId, GetHeadError> {
+        let snap_index = self.load_snap_index()?;
+        Ok(snap_index.head())
+    }
+
+    fn insert_into_dindex(
+        &mut self,
+        name: &str,
+        data: &str,
+    ) -> Result<DIndexVersionId, DIndexInsertError> {
+        let (version_id, dindex) = match self.data_dpack_manager.try_load(&name)? {
+            Some(mut index) => (index.insert_version(&data), index),
+            None => {
+                let index = DIndex::new(name, data);
+                (index.head(), index)
+            }
+        };
+
+        self.snap_dpack_manager.try_persist(dindex)?;
+        Ok(version_id)
+    }
+
+    fn load_snap_index(&self) -> Result<DIndex, SnapshotIndexLoadError> {
+        self.snap_dpack_manager
+            .try_load(Self::SNAP_INDEX_NAME)?
+            .ok_or(SnapshotIndexLoadError::NoIndex)
     }
 
     fn get_snapshot_by_id(
         &self,
         id: DIndexVersionId,
     ) -> Result<Option<Snapshot>, SnapshotLoadError> {
-        let snap_data = self
-            .snap_index_manager
-            .get_version(Self::SNAP_INDEX_NAME, id)?;
+        let snap_index = self.load_snap_index()?;
+        let snap_data = snap_index.get_version_data(id);
         if let Some(snap_data) = snap_data {
             Ok(Some(Snapshot::try_from(snap_data)?))
         } else {
@@ -163,9 +216,7 @@ impl SnapshotManager {
         &mut self,
         snap: Snapshot,
     ) -> Result<DIndexVersionId, SnapshotPersistError> {
-        let snap_data: String = snap.into();
-        self.snap_index_manager
-            .insert(Self::SNAP_INDEX_NAME, &snap_data)
+        self.insert_into_dindex(Self::SNAP_INDEX_NAME, &String::from(snap))
             .map_err(Into::into)
     }
 
@@ -179,7 +230,7 @@ impl SnapshotManager {
                 for_removal.push(path.clone());
                 continue;
             }
-            let new_version_id = self.data_index_manager.insert(
+            let new_version_id = self.insert_into_dindex(
                 &path.as_os_str().to_string_lossy(),
                 &fs::read_to_string(&path)?,
             )?;
@@ -194,6 +245,36 @@ impl SnapshotManager {
         }
         self.persist_snapshot(snap).map_err(Into::into)
     }
+
+    fn process_dir(
+        &mut self,
+        dir: &Path,
+        snap: &mut Snapshot,
+        ignored_paths: &Vec<impl AsRef<Path>>,
+    ) -> Result<(), SnapshotCreationError> {
+        'a: for entry in fs::read_dir(dir)? {
+            let path = entry?.path();
+            for ignored_path in ignored_paths {
+                if ignored_path.as_ref().file_name() == path.file_name() {
+                    continue 'a;
+                }
+            }
+            if path.is_dir() {
+                self.process_dir(&path, snap, ignored_paths)?;
+            } else if !&snap.contains_path(&path) {
+                let path_string = &path.as_os_str().to_string_lossy();
+                let version = match fs::read_to_string(&path) {
+                    Ok(data) => self.insert_into_dindex(path_string, &data)?,
+                    Err(e) if e.kind() == io::ErrorKind::InvalidData => self
+                        .blob_manager
+                        .insert_blob(path_string, fs::read(&path)?)?,
+                    Err(e) => return Err(e.into()),
+                };
+                snap.update_entry(&path, version);
+            }
+        }
+        Ok(())
+    }
     // Creates a snapshot from the contents of a directory, probably not the
     // final interface
     pub fn snapshot_from_dir(
@@ -203,46 +284,12 @@ impl SnapshotManager {
     ) -> Result<DIndexVersionId, SnapshotCreationError> {
         let parent_id = match self.get_head() {
             Ok(id) => Some(id),
-            Err(index_manager::LoadError::Nonexistent) => None,
+            Err(GetHeadError::IndexLoad(SnapshotIndexLoadError::NoIndex)) => None,
             Err(e) => return Err(e.into()),
         };
         let mut snap = Snapshot::new(parent_id);
 
-        fn process_dir(
-            dir: impl AsRef<Path>,
-            snap: &mut Snapshot,
-            index_manager: &mut DIndexManager,
-            ignored_paths: &Vec<impl AsRef<Path>>,
-        ) -> Result<(), SnapshotCreationError> {
-            'a: for entry in fs::read_dir(dir)? {
-                let path = entry?.path();
-                for ignored_path in ignored_paths {
-                    if ignored_path.as_ref().file_name() == path.file_name() {
-                        continue 'a;
-                    }
-                }
-                if path.is_dir() {
-                    process_dir(&path, snap, index_manager, &ignored_paths)?;
-                } else if !&snap.contains_path(&path) {
-                    let path_string = &path.as_os_str().to_string_lossy();
-                    let version = match fs::read_to_string(&path) {
-                        Ok(data) => index_manager.insert(path_string, &data)?,
-                        Err(e) if e.kind() == io::ErrorKind::InvalidData => {
-                            index_manager.insert_blob(path_string, fs::read(&path)?)?
-                        }
-                        Err(e) => return Err(e.into()),
-                    };
-                    snap.update_entry(&path, version);
-                }
-            }
-            Ok(())
-        }
-        process_dir(
-            path,
-            &mut snap,
-            &mut self.data_index_manager,
-            &ignored_paths,
-        )?;
+        self.process_dir(path.as_ref(), &mut snap, &ignored_paths)?;
         self.persist_snapshot(snap).map_err(Into::into)
     }
 }
