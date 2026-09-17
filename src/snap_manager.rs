@@ -92,8 +92,14 @@ pub enum SnapshotReadError {
 }
 
 #[derive(Debug, Error)]
-#[error("Could not persist snapshot")]
-pub struct SnapshotPersistError(#[from] DIndexInsertError);
+pub enum SnapshotPersistError {
+    #[error("Could not insert into DIndex: DIndex does not exist")]
+    Nonexistent,
+    #[error("Could not insert into DIndex: could not load DPack")]
+    DPackLoad(#[from] DPackLoadError),
+    #[error("Could not insert into DIndex: could not persist DPack")]
+    DPackPersist(#[from] DPackPersistError),
+}
 
 #[derive(Debug, Error)]
 pub enum SnapshotLoadError {
@@ -189,7 +195,7 @@ impl SnapshotManager {
             }
         };
 
-        self.snap_dpack_manager.try_persist(dindex)?;
+        self.data_dpack_manager.try_persist(dindex)?;
         Ok(version_id)
     }
 
@@ -216,8 +222,17 @@ impl SnapshotManager {
         &mut self,
         snap: Snapshot,
     ) -> Result<DIndexVersionId, SnapshotPersistError> {
-        self.insert_into_dindex(Self::SNAP_INDEX_NAME, &String::from(snap))
-            .map_err(Into::into)
+        let data: String = snap.into();
+        let (version_id, dindex) = match self.snap_dpack_manager.try_load(Self::SNAP_INDEX_NAME)? {
+            Some(mut index) => (index.insert_version(&data), index),
+            None => {
+                let index = DIndex::new(Self::SNAP_INDEX_NAME, &data);
+                (index.head(), index)
+            }
+        };
+
+        self.snap_dpack_manager.try_persist(dindex)?;
+        Ok(version_id)
     }
 
     fn update_snapshot(
@@ -319,6 +334,8 @@ mod test {
         "whole\ndifferent\ntext\n",
     ];
 
+    const BLOB_FILE: [u8; 1] = [255];
+
     fn initialize_test_dir() -> (TempDir, ChildPath, SnapshotManager) {
         let tmp = assert_fs::TempDir::new().unwrap();
         let index_dir = tmp.child("indexes");
@@ -374,6 +391,27 @@ mod test {
             assert!(snap_from_string.entries.get(path) == snap.entries.get(path));
         }
     }
+
+    #[test]
+    fn test_new_snapshot_with_blob() {
+        let (_tmp, data_dir, manager) = initialize_test_dir();
+
+        let blob_path = data_dir.join("blob.bin");
+        fs::write(&blob_path, BLOB_FILE).unwrap();
+
+        let snap = new_snap_object(manager, data_dir.path());
+        let v1_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
+        for path in FILE_NAMES {
+            let full_path = data_dir.path().to_path_buf().join(path);
+            assert!(snap.contains_path(&full_path));
+            assert!(*snap.get_version_id(&full_path).unwrap() == v1_id);
+        }
+        let blob_id = DIndexVersionId::from_version_data(BLOB_FILE);
+        let full_blob_path = data_dir.path().to_path_buf().join(&blob_path);
+        assert!(snap.contains_path(&full_blob_path));
+        assert!(*snap.get_version_id(&full_blob_path).unwrap() == blob_id);
+    }
+
     #[test]
     fn test_new_snapshot() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
