@@ -1,4 +1,4 @@
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct DPackId(u64);
 impl DPackId {
     pub(super) fn new(id: u64) -> DPackId {
