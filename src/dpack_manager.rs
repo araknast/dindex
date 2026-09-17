@@ -117,26 +117,23 @@ impl DPackManager {
     }
 
     pub fn try_persist(&mut self, dindex: DIndex) -> Result<(), DPackPersistError> {
-        let mut index = self.load_index()?;
-        let mut head_pack = match self.get_head_pack(&mut index) {
-            Ok(pack) => pack,
-            Err(e) => {
-                return Err(e.into());
-            }
+        let mut pack_index = self.load_index()?;
+        let (mut pack, pack_id) = match pack_index.get_pack_id(&dindex.name()) {
+            Some(id) => (self.load_pack(id)?, id),
+            None => (self.get_head_pack(&mut pack_index)?, pack_index.head()),
         };
 
-        let index_name = dindex.name();
-        index.insert(&index_name, index.head());
-        head_pack.insert(dindex);
-        self.persist_pack(head_pack, index.head())?;
-        self.persist_index(index)?;
+        pack_index.insert(&dindex.name(), pack_id);
+        pack.insert(dindex);
+        self.persist_pack(pack, pack_id)?;
+        self.persist_index(pack_index)?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, fs};
 
     use crate::{
         dindex::DIndex,
@@ -149,8 +146,10 @@ mod test {
     const VERSION4: &str = "some\nnew\nlines\nof\nimportance\nfor\nthe\nfile\nhere\n";
     const VERSION5: &str = "whole\ndifferent\ntext\n";
 
+    const EMPTY_DPACK_SIZE: u32 = 9; // Size of an empy zstd compressed file
+
     #[test]
-    fn test_load_persist_same_pack() {
+    fn test_load_persist_same_file_same_pack() {
         let tmp = assert_fs::TempDir::new().unwrap();
         let data_root: &str = &tmp.path().to_string_lossy();
 
@@ -158,6 +157,7 @@ mod test {
         let version_data = [VERSION1, VERSION2, VERSION3, VERSION4, VERSION5];
 
         let mut manager = DPackManager::new(data_root).unwrap();
+        manager.config.max_dpack_size_bytes = EMPTY_DPACK_SIZE;
         let mut index = DIndex::new(file_name, VERSION1);
         manager.try_persist(index.clone()).unwrap();
         let persisted = manager.try_load(file_name).unwrap().unwrap();
@@ -171,31 +171,44 @@ mod test {
 
             assert!(index == persisted);
         }
+        let dirents: Vec<_> = fs::read_dir(manager.pack_dir)
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert!(dirents.len() == 1);
     }
 
     #[test]
-    fn test_load_persist_different_packs() {
+    fn test_load_persist_different_files_different_packs() {
         let tmp = assert_fs::TempDir::new().unwrap();
         let data_root: &str = &tmp.path().to_string_lossy();
 
-        let file_name = "file.txt";
+        let file_names = ["1", "2", "3", "4", "5"];
         let version_data = [VERSION1, VERSION2, VERSION3, VERSION4, VERSION5];
 
         let mut manager = DPackManager::new(data_root).unwrap();
-        manager.config.max_dpack_size_bytes = 1;
-        let mut index = DIndex::new(file_name, VERSION1);
+        manager.config.max_dpack_size_bytes = EMPTY_DPACK_SIZE;
+        let index = DIndex::new(file_names[0], VERSION1);
         manager.try_persist(index.clone()).unwrap();
-        let persisted = manager.try_load(file_name).unwrap().unwrap();
+        let persisted = manager.try_load(file_names[0]).unwrap().unwrap();
 
         assert!(index == persisted);
 
-        for version in version_data {
-            index.insert_version(version);
+        for i in 0..version_data.len() {
+            let version = version_data[i];
+            let file_name = file_names[i];
+            let index = DIndex::new(file_name, version);
             manager.try_persist(index.clone()).unwrap();
             let persisted = manager.try_load(file_name).unwrap().unwrap();
 
             assert!(index == persisted);
         }
+
+        let dirents: Vec<_> = fs::read_dir(manager.pack_dir)
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert!(dirents.len() == 5);
     }
 
     #[test]
