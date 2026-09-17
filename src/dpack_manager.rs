@@ -14,7 +14,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::dindex::DIndex;
+use crate::{dindex::DIndex, dpack_manager::errors::GetHeadError};
 
 pub struct DPackManagerConfig {
     index_file_name: String,
@@ -60,7 +60,7 @@ impl DPackManager {
         })
     }
 
-    fn get_head_pack(&mut self, index: &mut DPackIndex) -> io::Result<DPack> {
+    fn get_head_pack(&mut self, index: &mut DPackIndex) -> Result<DPack, GetHeadError> {
         let pack_path = self.pack_dir.join(String::from(index.head()));
         let data = fs::read(pack_path)?;
         if data.len()
@@ -73,11 +73,11 @@ impl DPackManager {
             index.increment_head();
             Ok(DPack::new())
         } else {
-            self.load_pack(index.head())
+            Ok(self.load_pack(index.head())?)
         }
     }
 
-    fn load_pack(&self, id: DPackId) -> io::Result<DPack> {
+    fn load_pack(&self, id: DPackId) -> Result<DPack, DPackLoadError> {
         let pack_path = self.pack_dir.join(String::from(id));
         let pack_file = File::open(pack_path)?;
         let mut pack_data = Vec::new();
@@ -85,7 +85,7 @@ impl DPackManager {
         Ok(DPack::from(pack_data))
     }
 
-    fn persist_pack(&self, pack: DPack, id: DPackId) -> io::Result<()> {
+    fn persist_pack(&self, pack: DPack, id: DPackId) -> Result<(), DPackPersistError> {
         let pack_path = self.pack_dir.join(String::from(id));
         let pack_data: &[u8] = &Vec::<u8>::from(pack);
         let pack_file = File::create(pack_path)?;

@@ -1,11 +1,23 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+pub enum GetHeadError {
+    #[error("I/O error reading head")]
+    Io(#[from] std::io::Error),
+    #[error("Could not load head DPack")]
+    DPackLoad(#[from] DPackLoadError),
+}
+
+#[derive(Debug, Error)]
 pub enum DPackPersistError {
     #[error("I/O Error persisting DPack")]
     Io(#[from] std::io::Error),
     #[error("Could not persist DPack: could not load index")]
     IndexParse(#[from] DPackIndexLoadError),
+    #[error("Could not persist DPack: could not load DPack")]
+    DPackLoad(#[from] DPackLoadError),
+    #[error("Could not persist DPack: could not get head")]
+    GetHead(#[from] GetHeadError),
 }
 
 #[derive(Debug, Error)]
