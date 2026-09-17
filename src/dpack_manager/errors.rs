@@ -35,3 +35,9 @@ pub enum DPackIndexLoadError {
     #[error("Could not read index file")]
     FileLoad(#[from] std::io::Error),
 }
+
+#[derive(Debug, Error)]
+pub enum InitializationError {
+    #[error("I/O Error initializing DPack manager")]
+    Io(#[from] std::io::Error),
+}

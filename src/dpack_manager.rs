@@ -6,7 +6,8 @@ mod errors;
 use dpack::DPack;
 use dpack_id::DPackId;
 use dpack_index::DPackIndex;
-pub use errors::{DPackIndexLoadError, DPackLoadError, DPackPersistError};
+use errors::GetHeadError;
+pub use errors::{DPackIndexLoadError, DPackLoadError, DPackPersistError, InitializationError};
 
 use std::{
     fs::{self, File},
@@ -14,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{dindex::DIndex, dpack_manager::errors::GetHeadError};
+use crate::dindex::DIndex;
 
 pub struct DPackManagerConfig {
     index_file_name: String,
@@ -30,7 +31,7 @@ pub struct DPackManager {
 }
 
 impl DPackManager {
-    pub fn new(data_root: impl AsRef<Path>) -> Result<DPackManager, DPackIndexLoadError> {
+    pub fn new(data_root: impl AsRef<Path>) -> Result<DPackManager, InitializationError> {
         let config = DPackManagerConfig {
             index_file_name: String::from("index"),
             pack_dir_name: String::from("pack"),
