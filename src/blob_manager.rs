@@ -39,7 +39,7 @@ impl BlobManager {
     ) -> Result<Vec<u8>, io::Error> {
         let file_name: String = Self::encode_name(name);
         let version_id_string = hex::encode(version_id);
-        let dirname = Path::new(&self.data_root).join("bin").join(&file_name);
+        let dirname = Path::new(&self.data_root).join(&file_name);
         let path = dirname.join(&version_id_string);
 
         let file = File::open(&path)?;
@@ -56,7 +56,7 @@ impl BlobManager {
         let version_id = DIndexVersionId::from_version_data(data);
         let version_id_string = hex::encode(version_id);
 
-        let dirname = Path::new(&self.data_root).join("bin").join(&file_name);
+        let dirname = Path::new(&self.data_root).join(&file_name);
         let path = dirname.join(&version_id_string);
 
         let file = match File::create(&path) {
