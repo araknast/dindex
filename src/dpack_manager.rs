@@ -33,8 +33,8 @@ pub struct DPackManager {
 impl DPackManager {
     pub fn new(data_root: impl AsRef<Path>) -> Result<DPackManager, InitializationError> {
         let config = DPackManagerConfig {
-            index_file_name: String::from("index"),
-            pack_dir_name: String::from("pack"),
+            index_file_name: String::from("dpack_index"),
+            pack_dir_name: String::from("dpacks"),
             max_dpack_size_bytes: 4000,
             zstd_compression_level: 3,
         };
