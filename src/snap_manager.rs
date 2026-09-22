@@ -264,6 +264,7 @@ impl SnapshotManager {
     fn process_dir(
         &mut self,
         dir: &Path,
+        basename: impl AsRef<Path>,
         snap: &mut Snapshot,
         ignored_paths: &Vec<impl AsRef<Path>>,
     ) -> Result<(), SnapshotCreationError> {
@@ -275,9 +276,13 @@ impl SnapshotManager {
                 }
             }
             if path.is_dir() {
-                self.process_dir(&path, snap, ignored_paths)?;
+                self.process_dir(&path, basename.as_ref().join(&path), snap, ignored_paths)?;
             } else if !&snap.contains_path(&path) {
-                let path_string = &path.as_os_str().to_string_lossy();
+                let relative_path = basename.as_ref().join(
+                    path.file_name()
+                        .expect("Path read from dir had an invalid filename!"),
+                );
+                let path_string = &relative_path.as_os_str().to_string_lossy();
                 let version = match fs::read_to_string(&path) {
                     Ok(data) => self.insert_into_dindex(path_string, &data)?,
                     Err(e) if e.kind() == io::ErrorKind::InvalidData => self
@@ -285,7 +290,7 @@ impl SnapshotManager {
                         .insert_blob(path_string, fs::read(&path)?)?,
                     Err(e) => return Err(e.into()),
                 };
-                snap.update_entry(&path, version);
+                snap.update_entry(relative_path, version);
             }
         }
         Ok(())
@@ -304,7 +309,7 @@ impl SnapshotManager {
         };
         let mut snap = Snapshot::new(parent_id);
 
-        self.process_dir(path.as_ref(), &mut snap, &ignored_paths)?;
+        self.process_dir(path.as_ref(), "", &mut snap, &ignored_paths)?;
         self.persist_snapshot(snap).map_err(Into::into)
     }
 }
