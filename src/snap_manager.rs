@@ -116,12 +116,12 @@ pub enum SnapshotLoadError {
 }
 
 #[derive(Debug, Error)]
-pub enum SnapshotEductionError {
-    #[error("Could not educe snapshot: could not load snapshot")]
+pub enum SnapshotReproductionError {
+    #[error("Could not reproduce snapshot: could not load snapshot")]
     SnapshotLoad(#[from] SnapshotLoadError),
-    #[error("Could not educe snapshot: could not load a DPack")]
+    #[error("Could not reproduce snapshot: could not load a DPack")]
     DPackLoad(#[from] DPackLoadError),
-    #[error("Could not educe snapshot: I/O error")]
+    #[error("Could not reproduce snapshot: I/O error")]
     Io(#[from] io::Error),
 }
 
@@ -306,7 +306,7 @@ impl SnapshotManager {
         &self,
         id: DIndexVersionId,
         target: impl AsRef<Path>,
-    ) -> Result<(), SnapshotEductionError> {
+    ) -> Result<(), SnapshotReproductionError> {
         let snap = self.get_snapshot_by_id(id)?;
         for (path, version_id) in snap.into_entries() {
             let full_path = target.as_ref().join(&path);
