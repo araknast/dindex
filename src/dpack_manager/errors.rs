@@ -25,7 +25,7 @@ pub enum DPackLoadError {
     #[error("I/O Error loading DPack")]
     Io(#[from] std::io::Error),
     #[error("Could not load DPack: could not load index")]
-    IndexParse(#[from] DPackIndexLoadError),
+    IndexLoad(#[from] DPackIndexLoadError),
 }
 
 #[derive(Debug, Error)]
