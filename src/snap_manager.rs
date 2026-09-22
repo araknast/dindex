@@ -401,20 +401,18 @@ mod test {
     fn test_new_snapshot_with_blob() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
 
-        let blob_path = data_dir.join("blob.bin");
-        fs::write(&blob_path, BLOB_FILE).unwrap();
+        let blob_path = "blob.bin";
+        fs::write(&data_dir.join(&blob_path), BLOB_FILE).unwrap();
 
         let snap = new_snap_object(manager, data_dir.path());
         let v1_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
         for path in FILE_NAMES {
-            let full_path = data_dir.path().to_path_buf().join(path);
-            assert!(snap.contains_path(&full_path));
-            assert!(*snap.get_version_id(&full_path).unwrap() == v1_id);
+                        assert!(snap.contains_path(&path));
+            assert!(*snap.get_version_id(&path).unwrap() == v1_id);
         }
         let blob_id = DIndexVersionId::from_version_data(BLOB_FILE);
-        let full_blob_path = data_dir.path().to_path_buf().join(&blob_path);
-        assert!(snap.contains_path(&full_blob_path));
-        assert!(*snap.get_version_id(&full_blob_path).unwrap() == blob_id);
+                assert!(snap.contains_path(&blob_path));
+        assert!(*snap.get_version_id(&blob_path).unwrap() == blob_id);
     }
 
     #[test]
@@ -423,9 +421,8 @@ mod test {
         let snap = new_snap_object(manager, data_dir.path());
         let v1_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
         for path in FILE_NAMES {
-            let full_path = data_dir.path().to_path_buf().join(path);
-            assert!(snap.contains_path(&full_path));
-            assert!(*snap.get_version_id(&full_path).unwrap() == v1_id);
+                        assert!(snap.contains_path(&path));
+            assert!(*snap.get_version_id(&path).unwrap() == v1_id);
         }
     }
     #[test]
@@ -439,10 +436,9 @@ mod test {
         let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
-            let full_path = data_dir.path().to_path_buf().join(path);
-            let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[i + 1]);
-            assert!(snap.contains_path(&full_path));
-            assert!(*snap.get_version_id(&full_path).unwrap() == expected_id);
+                        let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[i + 1]);
+            assert!(snap.contains_path(&path));
+            assert!(*snap.get_version_id(&path).unwrap() == expected_id);
         }
     }
     #[test]
@@ -453,17 +449,17 @@ mod test {
             let full_path = data_dir.path().to_path_buf().join(path);
             fs::write(full_path, FILE_VERSIONS[i + 1]).unwrap();
         }
-        let new_file_path = data_dir.path().to_path_buf().join("new_file.txt");
+        let new_file_path = "new_file.txt";
+        let full_new_file_path = data_dir.path().to_path_buf().join(new_file_path);
         let new_file_expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
-        fs::write(&new_file_path, FILE_VERSIONS[0]).unwrap();
+        fs::write(&full_new_file_path, FILE_VERSIONS[0]).unwrap();
 
         let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
-            let full_path = data_dir.path().to_path_buf().join(path);
-            let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[i + 1]);
-            assert!(snap.contains_path(&full_path));
-            assert!(*snap.get_version_id(&full_path).unwrap() == expected_id);
+                        let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[i + 1]);
+            assert!(snap.contains_path(&path));
+            assert!(*snap.get_version_id(&path).unwrap() == expected_id);
         }
         assert!(snap.contains_path(&new_file_path));
         assert!(*snap.get_version_id(&new_file_path).unwrap() == new_file_expected_id);
@@ -472,19 +468,19 @@ mod test {
     fn test_update_removed_files() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
 
-        let removed_path = data_dir.path().to_path_buf().join(FILE_NAMES[2]);
-        fs::remove_file(&removed_path).unwrap();
+        let removed_path = FILE_NAMES[2];
+        let full_removed_path = data_dir.path().to_path_buf().join(removed_path);
+        fs::remove_file(&full_removed_path).unwrap();
 
         let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
-            let full_path = data_dir.path().to_path_buf().join(path);
-            if full_path != removed_path {
+                        if path != removed_path {
                 let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
-                assert!(snap.contains_path(&full_path));
-                assert!(*snap.get_version_id(&full_path).unwrap() == expected_id);
+                assert!(snap.contains_path(&path));
+                assert!(*snap.get_version_id(&path).unwrap() == expected_id);
             } else {
-                assert!(!snap.contains_path(full_path))
+                assert!(!snap.contains_path(&path))
             }
         }
     }
@@ -492,20 +488,20 @@ mod test {
     fn test_update_file_now_directory() {
         let (_tmp, data_dir, manager) = initialize_test_dir();
 
-        let directory_path = data_dir.path().to_path_buf().join(FILE_NAMES[2]);
-        fs::remove_file(&directory_path).unwrap();
-        fs::create_dir(&directory_path).unwrap();
+        let directory_path = FILE_NAMES[2];
+        let full_directory_path = data_dir.path().to_path_buf().join(directory_path);
+        fs::remove_file(&full_directory_path).unwrap();
+        fs::create_dir(&full_directory_path).unwrap();
 
         let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
-            let full_path = data_dir.path().to_path_buf().join(path);
-            if full_path != directory_path {
+                        if path != directory_path {
                 let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
-                assert!(snap.contains_path(&full_path));
-                assert!(*snap.get_version_id(&full_path).unwrap() == expected_id);
+                assert!(snap.contains_path(&path));
+                assert!(*snap.get_version_id(&path).unwrap() == expected_id);
             } else {
-                assert!(!snap.contains_path(full_path))
+                assert!(!snap.contains_path(&path))
             }
         }
     }
