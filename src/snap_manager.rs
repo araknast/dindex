@@ -250,32 +250,6 @@ impl SnapshotManager {
         Ok(version_id)
     }
 
-    fn update_snapshot(
-        &mut self,
-        mut snap: Snapshot,
-    ) -> Result<DIndexVersionId, SnapshotCreationError> {
-        let mut for_removal = Vec::new();
-        for (path, version_id) in &mut snap.entries {
-            if !path.is_file() {
-                for_removal.push(path.clone());
-                continue;
-            }
-            let new_version_id = self.insert_into_dindex(
-                &path.as_os_str().to_string_lossy(),
-                &fs::read_to_string(&path)?,
-            )?;
-
-            if new_version_id != *version_id {
-                *version_id = new_version_id;
-            }
-        }
-
-        for path in for_removal {
-            snap.entries.remove(&path);
-        }
-        self.persist_snapshot(snap).map_err(Into::into)
-    }
-
     fn process_dir(
         &mut self,
         dir: &Path,
