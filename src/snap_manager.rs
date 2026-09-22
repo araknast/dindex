@@ -264,13 +264,13 @@ impl SnapshotManager {
                     continue 'a;
                 }
             }
+            let relative_path = basename.as_ref().join(
+                path.file_name()
+                    .expect("Path read from dir had an invalid filename!"),
+            );
             if path.is_dir() {
-                self.process_dir(&path, basename.as_ref().join(&path), snap, ignored_paths)?;
+                self.process_dir(&path, relative_path, snap, ignored_paths)?;
             } else if !&snap.contains_path(&path) {
-                let relative_path = basename.as_ref().join(
-                    path.file_name()
-                        .expect("Path read from dir had an invalid filename!"),
-                );
                 let path_string = &relative_path.as_os_str().to_string_lossy();
                 let version = match fs::read_to_string(&path) {
                     Ok(data) => self.insert_into_dindex(path_string, &data)?,
@@ -318,8 +318,13 @@ impl SnapshotManager {
             let data = dindex
                 .get_version_data(version_id)
                 .expect("Version in snapshot does not exist in DIndex!");
-            println!("{:?}, {path:?} Writing {full_path:?}", target.as_ref());
-            fs::write(full_path, data)?;
+            match fs::write(&full_path, data) {
+                Ok(()) => continue,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                    fs::create_dir_all(&full_path.parent().expect("Invalid path in snapshot!"))?;
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
         Ok(())
     }
@@ -369,11 +374,54 @@ mod test {
         (tmp, data_dir, snapshot_manager)
     }
 
+    fn initialize_test_dir_recursive() -> (TempDir, ChildPath, ChildPath, SnapshotManager) {
+        let tmp = assert_fs::TempDir::new().unwrap();
+        let index_dir = tmp.child("indexes");
+        let data_dir = tmp.child("data");
+        let subdir = data_dir.child("dir");
+
+        fs::create_dir_all(&index_dir).unwrap();
+        fs::create_dir_all(&data_dir).unwrap();
+        fs::create_dir_all(&subdir).unwrap();
+
+        for name in FILE_NAMES {
+            let file_path = data_dir.path().to_path_buf().join(name);
+            fs::write(file_path, FILE_VERSIONS[0]).unwrap();
+        }
+
+        for name in FILE_NAMES {
+            let file_path = subdir.path().to_path_buf().join(name);
+            fs::write(file_path, FILE_VERSIONS[0]).unwrap();
+        }
+
+        let snapshot_manager = SnapshotManager::new(index_dir).unwrap();
+
+        (tmp, data_dir, subdir, snapshot_manager)
+    }
+
     fn new_snap_object(mut manager: SnapshotManager, data_dir: &Path) -> Snapshot {
         let snap_id = manager
             .snapshot_from_dir(data_dir, Vec::<String>::new())
             .unwrap();
         manager.get_snapshot_by_id(snap_id).unwrap()
+    }
+
+    #[test]
+    fn test_into_dir_recursive() {
+        let (tmp, data_dir, _, mut manager) = initialize_test_dir_recursive();
+        let output_dir = tmp.child("output");
+        fs::create_dir_all(&output_dir).unwrap();
+        let snap_id = manager
+            .snapshot_from_dir(&data_dir, Vec::<String>::new())
+            .unwrap();
+        manager.snapshot_into_dir(snap_id, &output_dir).unwrap();
+        let output_dirents: Vec<_> = fs::read_dir(output_dir).unwrap().collect();
+        let base_dirents: Vec<_> = fs::read_dir(data_dir).unwrap().collect();
+
+        assert!(output_dirents.len() == base_dirents.len());
+        for i in 0..output_dirents.len() {
+            assert!(output_dirents[i].is_ok() && base_dirents[i].is_ok())
+        }
     }
 
     #[test]
