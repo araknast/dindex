@@ -30,6 +30,7 @@ impl Snapshot {
     fn contains_path(&self, path: impl AsRef<Path>) -> bool {
         self.entries.contains_key(path.as_ref())
     }
+    #[cfg(test)]
     fn get_version_id(&self, path: impl AsRef<Path>) -> Option<&DIndexVersionId> {
         self.entries.get(path.as_ref())
     }
