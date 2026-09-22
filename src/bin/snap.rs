@@ -12,5 +12,9 @@ fn main() {
     let data_root = &args[2];
 
     let mut manager: SnapshotManager = SnapshotManager::new(data_root).unwrap();
-    manager.snapshot_from_dir(target_dir, vec![".git"]).unwrap();
+    let snap_id = manager
+        .snapshot_from_dir(target_dir, vec![".git", data_root])
+        .unwrap();
+    let snap_id_str = hex::encode(snap_id);
+    println!("{snap_id_str}");
 }
