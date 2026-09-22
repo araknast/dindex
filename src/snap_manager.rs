@@ -311,13 +311,18 @@ impl SnapshotManager {
         for (path, version_id) in snap.into_entries() {
             let full_path = target.as_ref().join(&path);
             let dindex_name = path.to_string_lossy();
-            let dindex = self
-                .data_dpack_manager
-                .try_load(&dindex_name)?
-                .expect("Snapshot key does not match any DIndex!");
-            let data = dindex
-                .get_version_data(version_id)
-                .expect("Version in snapshot does not exist in DIndex!");
+
+            let data: Vec<u8> = match self.data_dpack_manager.try_load(&dindex_name) {
+                Ok(Some(dindex)) => dindex
+                    .get_version_data(version_id)
+                    .expect("Version in snapshot does not exist in DIndex!")
+                    .into(),
+                Ok(None) => self
+                    .blob_manager
+                    .get_blob_version(&dindex_name, version_id)?,
+                Err(e) => return Err(e.into()),
+            };
+
             match fs::write(&full_path, data) {
                 Ok(()) => continue,
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -433,6 +438,29 @@ mod test {
             .snapshot_from_dir(&data_dir, Vec::<String>::new())
             .unwrap();
         manager.snapshot_into_dir(snap_id, &output_dir).unwrap();
+        let output_dirents: Vec<_> = fs::read_dir(output_dir).unwrap().collect();
+        let base_dirents: Vec<_> = fs::read_dir(data_dir).unwrap().collect();
+        assert!(output_dirents.len() == base_dirents.len());
+        for i in 0..output_dirents.len() {
+            assert!(output_dirents[i].is_ok() && base_dirents[i].is_ok())
+        }
+    }
+
+    #[test]
+    fn test_into_dir_blob() {
+        let (tmp, data_dir, mut manager) = initialize_test_dir();
+
+        let blob_path = "blob.bin";
+        fs::write(&data_dir.join(&blob_path), BLOB_FILE).unwrap();
+
+        let output_dir = tmp.child("output");
+        fs::create_dir_all(&output_dir).unwrap();
+
+        let snap_id = manager
+            .snapshot_from_dir(&data_dir, Vec::<String>::new())
+            .unwrap();
+        manager.snapshot_into_dir(snap_id, &output_dir).unwrap();
+
         let output_dirents: Vec<_> = fs::read_dir(output_dir).unwrap().collect();
         let base_dirents: Vec<_> = fs::read_dir(data_dir).unwrap().collect();
         assert!(output_dirents.len() == base_dirents.len());
