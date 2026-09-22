@@ -33,6 +33,9 @@ impl Snapshot {
     fn get_version_id(&self, path: impl AsRef<Path>) -> Option<&DIndexVersionId> {
         self.entries.get(path.as_ref())
     }
+    fn into_entries(self) -> HashMap<PathBuf, DIndexVersionId> {
+        self.entries
+    }
 }
 impl From<Snapshot> for String {
     fn from(snap: Snapshot) -> String {
@@ -107,6 +110,18 @@ pub enum SnapshotLoadError {
     Read(#[from] SnapshotReadError),
     #[error("Could not load snapshot: could not load the snapshot index")]
     IndexLoad(#[from] SnapshotIndexLoadError),
+    #[error("Could not load snapshot: snapshot does not exist")]
+    Nonexistent,
+}
+
+#[derive(Debug, Error)]
+pub enum SnapshotEductionError {
+    #[error("Could not educe snapshot: could not load snapshot")]
+    SnapshotLoad(#[from] SnapshotLoadError),
+    #[error("Could not educe snapshot: could not load a DPack")]
+    DPackLoad(#[from] DPackLoadError),
+    #[error("Could not educe snapshot: I/O error")]
+    Io(#[from] io::Error),
 }
 
 #[derive(Debug, Error)]
@@ -131,6 +146,8 @@ pub enum SnapshotCreationError {
     SnapshotPersist(#[from] SnapshotPersistError),
     #[error("Could not create snapshot: could not get head")]
     GetHead(#[from] GetHeadError),
+    #[error("Could not create snapshot: invalid target directory")]
+    InvalidTarget,
 }
 
 #[derive(Debug, Error)]
@@ -205,16 +222,13 @@ impl SnapshotManager {
             .ok_or(SnapshotIndexLoadError::NoIndex)
     }
 
-    fn get_snapshot_by_id(
-        &self,
-        id: DIndexVersionId,
-    ) -> Result<Option<Snapshot>, SnapshotLoadError> {
+    fn get_snapshot_by_id(&self, id: DIndexVersionId) -> Result<Snapshot, SnapshotLoadError> {
         let snap_index = self.load_snap_index()?;
         let snap_data = snap_index.get_version_data(id);
         if let Some(snap_data) = snap_data {
-            Ok(Some(Snapshot::try_from(snap_data)?))
+            Ok(Snapshot::try_from(snap_data)?)
         } else {
-            Ok(None)
+            Err(SnapshotLoadError::Nonexistent)
         }
     }
 
@@ -312,6 +326,28 @@ impl SnapshotManager {
         self.process_dir(path.as_ref(), "", &mut snap, &ignored_paths)?;
         self.persist_snapshot(snap).map_err(Into::into)
     }
+
+    pub fn snapshot_into_dir(
+        &self,
+        id: DIndexVersionId,
+        target: impl AsRef<Path>,
+    ) -> Result<(), SnapshotEductionError> {
+        let snap = self.get_snapshot_by_id(id)?;
+        for (path, version_id) in snap.into_entries() {
+            let full_path = target.as_ref().join(&path);
+            let dindex_name = path.to_string_lossy();
+            let dindex = self
+                .data_dpack_manager
+                .try_load(&dindex_name)?
+                .expect("Snapshot key does not match any DIndex!");
+            let data = dindex
+                .get_version_data(version_id)
+                .expect("Version in snapshot does not exist in DIndex!");
+            println!("{:?}, {path:?} Writing {full_path:?}", target.as_ref());
+            fs::write(full_path, data)?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -362,7 +398,24 @@ mod test {
         let snap_id = manager
             .snapshot_from_dir(data_dir, Vec::<String>::new())
             .unwrap();
-        manager.get_snapshot_by_id(snap_id).unwrap().unwrap()
+        manager.get_snapshot_by_id(snap_id).unwrap()
+    }
+
+    #[test]
+    fn test_into_dir() {
+        let (tmp, data_dir, mut manager) = initialize_test_dir();
+        let output_dir = tmp.child("output");
+        fs::create_dir_all(&output_dir).unwrap();
+        let snap_id = manager
+            .snapshot_from_dir(&data_dir, Vec::<String>::new())
+            .unwrap();
+        manager.snapshot_into_dir(snap_id, &output_dir).unwrap();
+        let output_dirents: Vec<_> = fs::read_dir(output_dir).unwrap().collect();
+        let base_dirents: Vec<_> = fs::read_dir(data_dir).unwrap().collect();
+        assert!(output_dirents.len() == base_dirents.len());
+        for i in 0..output_dirents.len() {
+            assert!(output_dirents[i].is_ok() && base_dirents[i].is_ok())
+        }
     }
 
     #[test]
@@ -407,11 +460,11 @@ mod test {
         let snap = new_snap_object(manager, data_dir.path());
         let v1_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
         for path in FILE_NAMES {
-                        assert!(snap.contains_path(&path));
+            assert!(snap.contains_path(&path));
             assert!(*snap.get_version_id(&path).unwrap() == v1_id);
         }
         let blob_id = DIndexVersionId::from_version_data(BLOB_FILE);
-                assert!(snap.contains_path(&blob_path));
+        assert!(snap.contains_path(&blob_path));
         assert!(*snap.get_version_id(&blob_path).unwrap() == blob_id);
     }
 
@@ -421,7 +474,7 @@ mod test {
         let snap = new_snap_object(manager, data_dir.path());
         let v1_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
         for path in FILE_NAMES {
-                        assert!(snap.contains_path(&path));
+            assert!(snap.contains_path(&path));
             assert!(*snap.get_version_id(&path).unwrap() == v1_id);
         }
     }
@@ -436,7 +489,7 @@ mod test {
         let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
-                        let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[i + 1]);
+            let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[i + 1]);
             assert!(snap.contains_path(&path));
             assert!(*snap.get_version_id(&path).unwrap() == expected_id);
         }
@@ -457,7 +510,7 @@ mod test {
         let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
-                        let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[i + 1]);
+            let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[i + 1]);
             assert!(snap.contains_path(&path));
             assert!(*snap.get_version_id(&path).unwrap() == expected_id);
         }
@@ -475,7 +528,7 @@ mod test {
         let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
-                        if path != removed_path {
+            if path != removed_path {
                 let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
                 assert!(snap.contains_path(&path));
                 assert!(*snap.get_version_id(&path).unwrap() == expected_id);
@@ -496,7 +549,7 @@ mod test {
         let snap = new_snap_object(manager, &data_dir.path());
         for i in 0..FILE_NAMES.len() {
             let path = FILE_NAMES[i];
-                        if path != directory_path {
+            if path != directory_path {
                 let expected_id = DIndexVersionId::from_version_data(FILE_VERSIONS[0]);
                 assert!(snap.contains_path(&path));
                 assert!(*snap.get_version_id(&path).unwrap() == expected_id);
