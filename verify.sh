@@ -13,7 +13,7 @@ fi
 
 prevdir="$PWD"
 cd "$original"
-git reset --hard origin/HEAD
+git reset -q --hard origin/HEAD
 cd "$prevdir"
 while read line
 do
@@ -21,7 +21,7 @@ do
 	commit_id=$(echo $line | cut -f2 -d' ')
 	$re "$data" $snap_id "$output"
 	cd "$original"
-	git reset --hard $commit_id
+	git reset -q --hard $commit_id
 	cd "$prevdir"
 	diff -r "$output" "$original"
 	rm -r "$output"
