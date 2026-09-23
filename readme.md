@@ -49,14 +49,41 @@ passed in the `data_root` constructor argument. `DIndexManager::try_persist` is
 used to to persist a `DIndex` object to the filesystem, and
 `DIndexManager::try_load` is used to load a persisted DIndex back into memory.
 
-## move.sh
-`move.sh` is a demo/integration test for the DIndex structure and DPack
-manager. It takes as argument a git repository and an empty directory. Starting
+## `snap` / `re`
+`snap` and `re` are two demo programs for creating and reproducing DIndex data
+respectively. The are used in `move.sh` and `verify.sh` respectively, but can
+also be used on their own. 
+
+`snap` takes as argument a target directory to snapshot, and a data directory in
+which to store the snapshot data. The id of the generated snapshot is printed to
+stdout.
+
+`snap <target directory> <data directory>`
+
+`re` takes as argument a data directory, an output directory, and a snapshot id.
+If the specified snapshot exists in the data directory, it will reconstruct the
+snapshot in the output directory.
+
+`re <data directory> <snapshot id> <target directory>`
+
+## move.sh / verify.sh
+`move.sh` and `verify.sh` are a demo/integration test scripts for the DIndex
+structure and DPack manager. 
+
+`move.sh` takes as argument a git repository and an empty directory. Starting
 at the first commit, the script will record each file into a DIndex. Once each
 file in the repository has been recorded, the script will advance to the next
 commit, and update the DIndexes with the new file contents. This process
 continues until the HEAD commit is reached and the entire repository has been
 migrated.
 
-
 `./move.sh <repo path> <data dir>`
+
+`verify.sh` takes as argument a git repository, a data directory produced by
+`move.sh`, and an empty output directory. The script will walk through each
+snapshot present in the data directory. Each snapshot is rebuilt in the output
+directory, and compared against the git repository's worktree at the
+corresponding commit. Any files that differ will be printed to console. By
+default, the `.git` directory of the original repository is ignored.
+
+`./verify.sh <repo path> <data dir> <output directory>`
