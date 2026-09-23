@@ -122,7 +122,7 @@ pub enum SnapshotReproductionError {
     #[error("Could not reproduce snapshot: could not load a DPack")]
     DPackLoad(#[from] DPackLoadError),
     #[error("Could not reproduce snapshot: I/O error")]
-    Io(#[from] io::Error),
+    IO(#[from] io::Error),
 }
 
 #[derive(Debug, Error)]
@@ -140,7 +140,7 @@ pub struct SnapshotIndexPersistError(#[from] DPackPersistError);
 #[derive(Debug, Error)]
 pub enum SnapshotCreationError {
     #[error("I/O error attempting to create snapshot")]
-    Io(#[from] io::Error),
+    IO(#[from] io::Error),
     #[error("Could not create snapshot: could not update a file's Dindex")]
     DIndexInsert(#[from] DIndexInsertError),
     #[error("Could not create snapshot: could not persist snapshot")]

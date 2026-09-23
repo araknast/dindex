@@ -39,5 +39,5 @@ pub enum DPackIndexLoadError {
 #[derive(Debug, Error)]
 pub enum InitializationError {
     #[error("I/O Error initializing DPack manager")]
-    Io(#[from] std::io::Error),
+    IO(#[from] std::io::Error),
 }
