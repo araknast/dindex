@@ -323,10 +323,11 @@ impl SnapshotManager {
                 Err(e) => return Err(e.into()),
             };
 
-            match fs::write(&full_path, data) {
+            match fs::write(&full_path, &data) {
                 Ok(()) => continue,
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {
                     fs::create_dir_all(&full_path.parent().expect("Invalid path in snapshot!"))?;
+                    fs::write(&full_path, &data)?
                 }
                 Err(e) => return Err(e.into()),
             }
@@ -413,19 +414,29 @@ mod test {
 
     #[test]
     fn test_into_dir_recursive() {
-        let (tmp, data_dir, _, mut manager) = initialize_test_dir_recursive();
+        let (tmp, data_dir, subdir, mut manager) = initialize_test_dir_recursive();
         let output_dir = tmp.child("output");
         fs::create_dir_all(&output_dir).unwrap();
         let snap_id = manager
             .snapshot_from_dir(&data_dir, Vec::<String>::new())
             .unwrap();
         manager.snapshot_into_dir(snap_id, &output_dir).unwrap();
-        let output_dirents: Vec<_> = fs::read_dir(output_dir).unwrap().collect();
+        let output_dirents: Vec<_> = fs::read_dir(&output_dir).unwrap().collect();
         let base_dirents: Vec<_> = fs::read_dir(data_dir).unwrap().collect();
 
         assert!(output_dirents.len() == base_dirents.len());
         for i in 0..output_dirents.len() {
             assert!(output_dirents[i].is_ok() && base_dirents[i].is_ok())
+        }
+
+        let subdir_basename = subdir.path().file_name().unwrap();
+        let output_subdir = output_dir.join(subdir_basename);
+        let output_subdir_dirents: Vec<_> = fs::read_dir(output_subdir).unwrap().collect();
+        let base_subdir_dirents: Vec<_> = fs::read_dir(subdir).unwrap().collect();
+
+        assert!(output_subdir_dirents.len() == base_subdir_dirents.len());
+        for i in 0..output_subdir_dirents.len() {
+            assert!(output_subdir_dirents[i].is_ok() && base_subdir_dirents[i].is_ok())
         }
     }
 
