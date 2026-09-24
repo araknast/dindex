@@ -57,10 +57,6 @@ pub enum SnapshotIndexLoadError {
 }
 
 #[derive(Debug, Error)]
-#[error("Could not persist snapshot index")]
-pub struct SnapshotIndexPersistError(#[from] DPackPersistError);
-
-#[derive(Debug, Error)]
 pub enum SnapshotCreationError {
     #[error("I/O error attempting to create snapshot")]
     IO(#[from] io::Error),
