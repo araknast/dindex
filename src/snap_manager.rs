@@ -1,179 +1,20 @@
-use hex::FromHexError;
-use std::{
-    collections::HashMap,
-    fs, io,
-    path::{Path, PathBuf},
-};
-use thiserror::Error;
+use std::{fs, io, path::Path};
 
 use crate::{
-    blob_manager::{self, BlobManager},
-    dindex::{self, DIndex, DIndexVersionId},
-    dpack_manager::{self, DPackLoadError, DPackManager, DPackPersistError},
+    blob_manager::BlobManager,
+    dindex::{DIndex, DIndexVersionId},
+    dpack_manager::DPackManager,
 };
 
-#[derive(Debug, Clone)]
-struct Snapshot {
-    entries: HashMap<PathBuf, DIndexVersionId>,
-    parent_id: Option<DIndexVersionId>,
-}
-impl Snapshot {
-    fn new(parent_id: Option<DIndexVersionId>) -> Snapshot {
-        Snapshot {
-            entries: HashMap::new(),
-            parent_id,
-        }
-    }
-    fn update_entry(&mut self, path: impl AsRef<Path>, id: DIndexVersionId) {
-        self.entries.insert(path.as_ref().to_path_buf(), id);
-    }
-    fn contains_path(&self, path: impl AsRef<Path>) -> bool {
-        self.entries.contains_key(path.as_ref())
-    }
-    #[cfg(test)]
-    fn get_version_id(&self, path: impl AsRef<Path>) -> Option<&DIndexVersionId> {
-        self.entries.get(path.as_ref())
-    }
-    fn into_entries(self) -> HashMap<PathBuf, DIndexVersionId> {
-        self.entries
-    }
-}
-impl From<Snapshot> for String {
-    fn from(snap: Snapshot) -> String {
-        let mut string = String::new();
-        if let Some(parent_id) = snap.parent_id {
-            string.push_str(&hex::encode(parent_id));
-            string.push_str("\n");
-        } else {
-            string.push('\0');
-            string.push_str("\n");
-        }
-        for (path, id_str) in snap.entries {
-            let name = path.as_os_str().to_string_lossy();
-            string.push_str(&name);
-            string.push_str(" ");
-            string.push_str(&hex::encode(id_str));
-            string.push_str("\n");
-        }
-        string
-    }
-}
+use errors::{
+    DIndexInsertError, GetHeadError, InitializationError, SnapshotCreationError,
+    SnapshotIndexLoadError, SnapshotLoadError, SnapshotPersistError, SnapshotReproductionError,
+};
+use snapshot::Snapshot;
 
-impl TryFrom<String> for Snapshot {
-    type Error = SnapshotReadError;
-    fn try_from(data: String) -> Result<Snapshot, Self::Error> {
-        let mut entries = HashMap::new();
-        let mut iter = data.lines();
-        let parent_id_str = iter.next().ok_or(SnapshotReadError::EarlyTermination)?;
-        let parent_id: Option<DIndexVersionId> = if parent_id_str == "\0" {
-            None
-        } else {
-            Some(hex::decode(parent_id_str)?.try_into()?)
-        };
+mod errors;
+mod snapshot;
 
-        for line in iter {
-            let mut split = line.split(" ");
-            let name = split.next().ok_or(SnapshotReadError::EarlyTermination)?;
-            let id: DIndexVersionId =
-                hex::decode(split.next().ok_or(SnapshotReadError::EarlyTermination)?)?
-                    .try_into()?;
-            entries.insert(PathBuf::from(name), id);
-        }
-
-        Ok(Snapshot { parent_id, entries })
-    }
-}
-
-#[derive(Debug, Error)]
-#[error("Failed to parse snapshot data")]
-pub enum SnapshotReadError {
-    #[error("Could not parse snapshot id")]
-    ObjectIdParse(#[from] FromHexError),
-    #[error("File ended early")]
-    EarlyTermination,
-    #[error("Invalid snapshot id")]
-    InvalidId(#[from] dindex::DeserializationError),
-}
-
-#[derive(Debug, Error)]
-pub enum SnapshotPersistError {
-    #[error("Could not insert into DIndex: DIndex does not exist")]
-    Nonexistent,
-    #[error("Could not insert into DIndex: could not load DPack")]
-    DPackLoad(#[from] DPackLoadError),
-    #[error("Could not insert into DIndex: could not persist DPack")]
-    DPackPersist(#[from] DPackPersistError),
-}
-
-#[derive(Debug, Error)]
-pub enum SnapshotLoadError {
-    #[error("Error reading snapshot data")]
-    Read(#[from] SnapshotReadError),
-    #[error("Could not load snapshot: could not load the snapshot index")]
-    IndexLoad(#[from] SnapshotIndexLoadError),
-    #[error("Could not load snapshot: snapshot does not exist")]
-    Nonexistent,
-}
-
-#[derive(Debug, Error)]
-pub enum SnapshotReproductionError {
-    #[error("Could not reproduce snapshot: could not load snapshot")]
-    SnapshotLoad(#[from] SnapshotLoadError),
-    #[error("Could not reproduce snapshot: could not load a DPack")]
-    DPackLoad(#[from] DPackLoadError),
-    #[error("Could not reproduce snapshot: I/O error")]
-    IO(#[from] io::Error),
-}
-
-#[derive(Debug, Error)]
-pub enum SnapshotIndexLoadError {
-    #[error("Could not load the snapshot DPack")]
-    DPackLoad(#[from] DPackLoadError),
-    #[error("Snapshot index does not exist in snapshot DPack!")]
-    NoIndex,
-}
-
-#[derive(Debug, Error)]
-#[error("Could not persist snapshot index")]
-pub struct SnapshotIndexPersistError(#[from] DPackPersistError);
-
-#[derive(Debug, Error)]
-pub enum SnapshotCreationError {
-    #[error("I/O error attempting to create snapshot")]
-    IO(#[from] io::Error),
-    #[error("Could not create snapshot: could not update a file's Dindex")]
-    DIndexInsert(#[from] DIndexInsertError),
-    #[error("Could not create snapshot: could not persist snapshot")]
-    SnapshotPersist(#[from] SnapshotPersistError),
-    #[error("Could not create snapshot: could not get head")]
-    GetHead(#[from] GetHeadError),
-    #[error("Could not create snapshot: invalid target directory")]
-    InvalidTarget,
-}
-
-#[derive(Debug, Error)]
-pub enum InitializationError {
-    #[error("Could not initialize dpack manager")]
-    DPackManager(#[from] dpack_manager::InitializationError),
-    #[error("Could not initialize blob manager")]
-    BlobManager(#[from] blob_manager::InitializationError),
-}
-
-#[derive(Debug, Error)]
-pub enum GetHeadError {
-    #[error("Could not get head: could not load snap index")]
-    IndexLoad(#[from] SnapshotIndexLoadError),
-}
-
-#[derive(Debug, Error)]
-pub enum DIndexInsertError {
-    #[error("Could not insert into DIndex: DIndex does not exist")]
-    Nonexistent,
-    #[error("Could not insert into DIndex: could not load DPack")]
-    DPackLoad(#[from] DPackLoadError),
-    #[error("Could not insert into DIndex: could not persist DPack")]
-    DPackPersist(#[from] DPackPersistError),
-}
 pub struct SnapshotManager {
     data_dpack_manager: DPackManager,
     snap_dpack_manager: DPackManager,
@@ -487,9 +328,9 @@ mod test {
         let snap_string = String::from(snap.clone());
         let snap_from_string = Snapshot::try_from(snap_string).unwrap();
 
-        for (path, _) in &snap.entries {
+        for (path, _) in snap.entries() {
             assert!(snap_from_string.contains_path(path));
-            assert!(snap_from_string.entries.get(path) == snap.entries.get(path));
+            assert!(snap_from_string.entries().get(path) == snap.entries().get(path));
         }
     }
     #[test]
@@ -506,9 +347,9 @@ mod test {
         let snap_string = String::from(snap.clone());
         let snap_from_string = Snapshot::try_from(snap_string).unwrap();
 
-        for (path, _) in &snap.entries {
+        for (path, _) in snap.entries() {
             assert!(snap_from_string.contains_path(path));
-            assert!(snap_from_string.entries.get(path) == snap.entries.get(path));
+            assert!(snap_from_string.entries().get(path) == snap.entries().get(path));
         }
     }
 
