@@ -2,22 +2,22 @@ use crate::dindex::DIndex;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct DPack {
+pub struct DPack {
     entries: HashMap<String, DIndex>,
 }
 
 impl DPack {
-    pub(super) fn new() -> DPack {
+    pub fn new() -> DPack {
         DPack {
             entries: HashMap::new(),
         }
     }
 
-    pub(super) fn insert(&mut self, index: DIndex) {
+    pub fn insert(&mut self, index: DIndex) {
         self.entries.insert(index.name(), index);
     }
 
-    pub(super) fn into_entry(mut self, name: &str) -> Option<DIndex> {
+    pub fn into_entry(mut self, name: &str) -> Option<DIndex> {
         self.entries.remove(name)
     }
 }

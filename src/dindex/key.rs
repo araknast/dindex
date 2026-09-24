@@ -10,13 +10,13 @@ impl From<Vec<DIndexRange>> for DIndexKey {
 }
 
 impl DIndexKey {
-    pub(super) fn ranges(&self) -> impl Iterator<Item = &DIndexRange> {
+    pub fn ranges(&self) -> impl Iterator<Item = &DIndexRange> {
         self.0.iter()
     }
-    pub(super) fn into_ranges(self) -> impl Iterator<Item = DIndexRange> {
+    pub fn into_ranges(self) -> impl Iterator<Item = DIndexRange> {
         self.0.into_iter()
     }
-    pub(super) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.0.len()
     }
 }

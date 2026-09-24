@@ -1,13 +1,13 @@
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(super) struct DPackId(u64);
+pub struct DPackId(u64);
 impl DPackId {
-    pub(super) fn new(id: u64) -> DPackId {
+    pub fn new(id: u64) -> DPackId {
         DPackId(id)
     }
-    pub(super) fn default() -> DPackId {
+    pub fn default() -> DPackId {
         DPackId(0)
     }
-    pub(super) fn next(&self) -> DPackId {
+    pub fn next(&self) -> DPackId {
         DPackId(self.0 + 1)
     }
 }

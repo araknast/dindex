@@ -3,32 +3,32 @@ use super::errors::DPackIndexLoadError;
 use std::collections::HashMap;
 
 #[derive(Clone, PartialEq)]
-pub(super) struct DPackIndex {
+pub struct DPackIndex {
     entries: HashMap<String, DPackId>,
     head: DPackId,
 }
 
 impl DPackIndex {
     #[cfg(test)]
-    pub(super) fn new(entries: HashMap<String, DPackId>, head: DPackId) -> DPackIndex {
+    pub fn new(entries: HashMap<String, DPackId>, head: DPackId) -> DPackIndex {
         DPackIndex { entries, head }
     }
-    pub(super) fn default() -> DPackIndex {
+    pub fn default() -> DPackIndex {
         DPackIndex {
             entries: HashMap::new(),
             head: DPackId::default(),
         }
     }
-    pub(super) fn head(&self) -> DPackId {
+    pub fn head(&self) -> DPackId {
         self.head
     }
-    pub(super) fn get_pack_id(&self, name: &str) -> Option<DPackId> {
+    pub fn get_pack_id(&self, name: &str) -> Option<DPackId> {
         self.entries.get(name).copied()
     }
-    pub(super) fn insert(&mut self, name: &str, id: DPackId) {
+    pub fn insert(&mut self, name: &str, id: DPackId) {
         self.entries.insert(name.to_string(), id);
     }
-    pub(super) fn increment_head(&mut self) {
+    pub fn increment_head(&mut self) {
         self.head = self.head.next();
     }
 }

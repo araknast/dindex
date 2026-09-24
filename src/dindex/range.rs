@@ -1,14 +1,14 @@
 use std::ops::Range;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub(super) struct DIndexRange((usize, usize));
+pub struct DIndexRange((usize, usize));
 
 impl DIndexRange {
-    pub(super) fn new(start: usize, end: usize) -> DIndexRange {
+    pub fn new(start: usize, end: usize) -> DIndexRange {
         DIndexRange((start, end))
     }
 
-    pub(super) fn into_bytes(self) -> [u8; 16] {
+    pub fn into_bytes(self) -> [u8; 16] {
         self.into()
     }
 }
